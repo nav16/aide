@@ -150,6 +150,10 @@
     // restore last prompt with text selected so user can overwrite easily
     const promptEl = dropdown.querySelector('.aif-prompt');
     promptEl.value = lastPrompt;
+    requestAnimationFrame(() => {
+      promptEl.focus();
+      if (lastPrompt) promptEl.select();
+    });
 
     chrome.storage.sync.get(['provider'], (d) => {
       const labels = { claude: 'Claude', openai: 'OpenAI', ollama: 'Ollama' };
