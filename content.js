@@ -32,6 +32,18 @@
   `;
   document.body.appendChild(dropdown);
 
+  const selPopup = document.createElement('div');
+  selPopup.className = 'aif-sel-popup';
+  selPopup.innerHTML = `
+    <div class="aif-sel-header">
+      <span class="aif-sel-type"></span>
+      <button class="aif-sel-close" aria-label="Close">✕</button>
+    </div>
+    <div class="aif-sel-body"></div>
+  `;
+  document.body.appendChild(selPopup);
+  selPopup.style.display = 'none';
+
   // ---- State ----
 
   let activeField = null;
@@ -296,13 +308,124 @@
 
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && dropdown.style.display !== 'none') hideDropdown();
+    if (e.key === 'Escape') {
+      if (dropdown.style.display !== 'none') hideDropdown();
+      if (selPopup.style.display !== 'none') hideSelPopup();
+    }
   });
 
   document.addEventListener('mousedown', (e) => {
     if (dropdown.style.display === 'none') return;
     if (!dropdown.contains(e.target) && e.target !== btn) hideDropdown();
   });
+
+  document.addEventListener('mousedown', (e) => {
+    if (selPopup.style.display === 'none') return;
+    if (!selPopup.contains(e.target)) {
+      // only dismiss immediately if not starting a new selection (single click, not drag)
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) hideSelPopup();
+      }, 10);
+    }
+  });
+
+  // ---- Selection popup ----
+
+  selPopup.querySelector('.aif-sel-close').addEventListener('click', hideSelPopup);
+
+  function hideSelPopup() {
+    selPopup.style.display = 'none';
+  }
+
+  let selDebounce = null;
+  let selReqId = 0;
+
+  document.addEventListener('selectionchange', () => {
+    clearTimeout(selDebounce);
+    selDebounce = setTimeout(() => checkSelection(), 300);
+  });
+
+  function isInsideEditableField(node) {
+    let el = node.nodeType === 3 ? node.parentElement : node;
+    while (el) {
+      if (el.matches?.(FIELD_SELECTOR)) return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+
+  function checkSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) { hideSelPopup(); return; }
+    const text = sel.toString().trim();
+    if (!text || text.length < 2) { hideSelPopup(); return; }
+
+    const range = sel.getRangeAt(0);
+    if (isInsideEditableField(range.commonAncestorContainer)) { hideSelPopup(); return; }
+
+    const isWord = /^\S+$/.test(text) && text.length < 40;
+    const kind   = isWord ? 'word' : 'explain';
+
+    const bodyEl = selPopup.querySelector('.aif-sel-body');
+    const typeEl = selPopup.querySelector('.aif-sel-type');
+
+    // same text already showing — no need to re-fetch
+    if (selPopup.style.display === 'block' && selPopup.dataset.selText === text) {
+      positionSelPopup(range);
+      return;
+    }
+
+    selReqId++;
+    const myReqId = selReqId;
+
+    typeEl.textContent = isWord ? 'DEFINE' : 'EXPLAIN';
+    bodyEl.textContent = '···';
+    bodyEl.className = 'aif-sel-body loading';
+    selPopup.dataset.selText = text;
+
+    positionSelPopup(range);
+    selPopup.style.display = 'block';
+
+    chrome.runtime.sendMessage({
+      action: 'explain',
+      kind,
+      text,
+      pageTitle: document.title
+    }, (response) => {
+      if (myReqId !== selReqId) return; // superseded by newer selection
+      if (selPopup.style.display === 'none') return;
+      bodyEl.className = 'aif-sel-body';
+      if (chrome.runtime.lastError || !response?.success) {
+        bodyEl.textContent = response?.error || 'Failed to fetch.';
+        bodyEl.className = 'aif-sel-body aif-sel-error';
+      } else {
+        bodyEl.innerHTML = renderMarkdown(response.text);
+      }
+      positionSelPopup(range);
+    });
+  }
+
+  function renderMarkdown(text) {
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+  }
+
+  function positionSelPopup(range) {
+    const r = range.getBoundingClientRect();
+    const popW = 280;
+    const popH = selPopup.offsetHeight || 120;
+    let left = r.left + (r.width / 2) - (popW / 2);
+    if (left < 6) left = 6;
+    if (left + popW > window.innerWidth - 6) left = window.innerWidth - popW - 6;
+    let top = r.top - popH - 10;
+    if (top < 6) top = r.bottom + 10;
+    selPopup.style.left = `${left}px`;
+    selPopup.style.top  = `${top}px`;
+  }
 
   function showError(msg) {
     const genBtn   = dropdown.querySelector('.aif-generate');
