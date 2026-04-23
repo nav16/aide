@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Chromei</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Syne+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="shell">
+
+    <header class="hd">
+      <div class="hd-mark">✦</div>
+      <div class="hd-text">
+        <div class="hd-name">CHROMEI</div>
+        <div class="hd-sub">AI FIELD ASSISTANT</div>
+      </div>
+      <div class="hd-dot" id="statusDot"></div>
+    </header>
+
+    <div class="rule"></div>
+
+    <section class="section">
+      <div class="lbl">PROVIDER</div>
+      <div class="tabs" role="group" aria-label="AI provider">
+        <button class="tab" data-value="claude"  type="button">Claude</button>
+        <button class="tab" data-value="openai"  type="button">OpenAI</button>
+        <button class="tab" data-value="ollama"  type="button">Ollama</button>
+      </div>
+      <input type="hidden" id="provider" value="claude">
+    </section>
+
+    <section class="section" id="apiKeyGroup">
+      <div class="lbl">API KEY</div>
+      <div class="inset">
+        <input type="password" id="apiKey" class="field" placeholder="sk-···" autocomplete="off" spellcheck="false">
+        <button id="toggleKey" class="glyph-btn" type="button" aria-label="Toggle key visibility">
+          <svg id="eyeIcon" width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7.5 3C4.5 3 2 7.5 2 7.5S4.5 12 7.5 12 13 7.5 13 7.5 10.5 3 7.5 3Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+            <circle cx="7.5" cy="7.5" r="1.8" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <section class="section hidden" id="ollamaUrlGroup">
+      <div class="lbl">OLLAMA URL</div>
+      <input type="text" id="ollamaBaseUrl" class="field bare" placeholder="http://localhost:11434" spellcheck="false">
+    </section>
+
+    <section class="section">
+      <div class="lbl-row">
+        <span class="lbl">MODEL</span>
+        <button id="refreshModels" class="text-btn hidden" type="button">↺ SYNC</button>
+      </div>
+      <div class="sel-wrap">
+        <select id="model" class="field sel"></select>
+        <span class="sel-caret" aria-hidden="true">▾</span>
+      </div>
+      <p id="ollamaHint" class="hint hidden">Make sure Ollama is running locally</p>
+    </section>
+
+    <button id="save" class="save-btn" type="button">
+      <span>SAVE SETTINGS</span>
+      <span class="save-arr">→</span>
+    </button>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
