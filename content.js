@@ -270,8 +270,19 @@
         // execCommand is what Draft.js/Slate/Quill/ProseMirror all expect —
         // they intercept browser editing events, not DOM mutations.
         // Must run after focus() is settled, which is why this is inside setTimeout.
-        const ok = document.execCommand('selectAll', false, null) &&
-                   document.execCommand('insertText', false, text);
+        // Clear existing content first, then insert line-by-line.
+        // Inserting the full text (with \n) in one execCommand loses newlines
+        // when replacing existing HTML structure in rich-text editors like Gmail.
+        const cleared = document.execCommand('selectAll', false, null) &&
+                        document.execCommand('delete', false, null);
+        let ok = cleared;
+        if (cleared) {
+          const lines = text.split('\n');
+          lines.forEach((line, i) => {
+            if (i > 0) document.execCommand('insertParagraph', false, null);
+            if (line) ok = document.execCommand('insertText', false, line) && ok;
+          });
+        }
         if (!ok) {
           // Fallback: bare contenteditable with no framework
           try {
@@ -294,15 +305,11 @@
         }
       }, 50);
     } else {
-      try {
-        field.setRangeText(text, 0, field.value.length, 'end');
-      } catch (e) {
-        const proto = field instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (setter) setter.call(field, text);
-        else field.value = text;
-      }
+      const proto = field instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(field, text);
+      else field.value = text;
       field.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
       field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     }
