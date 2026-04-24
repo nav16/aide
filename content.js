@@ -50,6 +50,7 @@
   let generatedText = '';
   let scrollListener = null;
   let lastPrompt = '';
+  let hideBtnTimer = null;
 
   hideDropdown();
   hideBtn();
@@ -183,12 +184,13 @@
 
   function onFocus(e) {
     if (dropdown.contains(e.target) || e.target === btn) return; // ignore our own UI
+    clearTimeout(hideBtnTimer); // cancel any pending hide from a prior blur
     activeField = e.target;
     positionBtn(activeField);
   }
 
   function onBlur() {
-    setTimeout(() => {
+    hideBtnTimer = setTimeout(() => {
       if (document.activeElement !== btn && !dropdown.contains(document.activeElement)) {
         hideBtn();
       }
