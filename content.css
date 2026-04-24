@@ -260,6 +260,50 @@
 
 .aif-sel-copy.hidden { display: none; }
 
+.aif-sel-followup {
+  display: flex;
+  gap: 4px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.aif-sel-followup.hidden { display: none; }
+
+.aif-sel-ask {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
+  color: #ebebeb;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 7px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.aif-sel-ask:focus {
+  border-color: rgba(226,255,90,0.4);
+  background: rgba(255,255,255,0.06);
+}
+
+.aif-sel-ask:disabled { opacity: 0.5; }
+
+.aif-sel-ask-btn {
+  background: rgba(226,255,90,0.15);
+  border: 1px solid rgba(226,255,90,0.25);
+  border-radius: 4px;
+  color: rgba(226,255,90,0.9);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 8px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.aif-sel-ask-btn:hover { background: rgba(226,255,90,0.25); }
+
 .aif-sel-body {
   font-size: 12px;
   line-height: 1.55;

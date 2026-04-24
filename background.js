@@ -50,7 +50,13 @@ function userMsg(label, userPrompt, pageTitle, constraints) {
   return msg;
 }
 
-function explainPrompts(kind, text, pageTitle) {
+function explainPrompts(kind, text, pageTitle, context) {
+  if (kind === 'followup') {
+    return {
+      system: 'You are a helpful assistant continuing a conversation about selected text from a web page. Answer the follow-up concisely (2-4 sentences). No preamble.',
+      user: `Original text: "${context?.originalText || ''}"\nPrior answer: "${context?.prior || ''}"\nFollow-up: ${text}\nPage context: "${pageTitle}"`
+    };
+  }
   return {
     system: kind === 'word'
       ? 'You are a concise dictionary. Given a word, respond with: part of speech, definition (1-2 sentences), and a short example sentence. No preamble.'
@@ -63,10 +69,10 @@ function explainPrompts(kind, text, pageTitle) {
 
 // ---- Handlers ----
 
-async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, ollamaBaseUrl }, signal) {
+async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, ollamaBaseUrl, context }, signal) {
   if (!provider) throw new Error('No provider configured. Open extension settings.');
   if (provider !== 'ollama' && !apiKey) throw new Error('API key not set. Open extension popup.');
-  const { system, user } = explainPrompts(kind, text, pageTitle);
+  const { system, user } = explainPrompts(kind, text, pageTitle, context);
   switch (provider) {
     case 'claude': return callClaude(apiKey, model, user, system, MAX_TOKENS.explain, signal);
     case 'openai': return callOpenAI(apiKey, model, user, system, MAX_TOKENS.explain, signal);

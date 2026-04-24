@@ -71,6 +71,10 @@
       </div>
     </div>
     <div class="aif-sel-body"></div>
+    <form class="aif-sel-followup hidden">
+      <input class="aif-sel-ask" type="text" placeholder="Ask a follow-up…" autocomplete="off">
+      <button class="aif-sel-ask-btn" type="submit" aria-label="Ask">↵</button>
+    </form>
   `;
   document.body.appendChild(selPopup);
   selPopup.style.display = 'none';
@@ -544,7 +548,11 @@
     bodyEl.textContent = '···';
     bodyEl.className = 'aif-sel-body loading';
     selPopup.dataset.selText = text;
+    selPopup.dataset.originalText = text; // anchor for any follow-up turns
+    selPopup.dataset.priorAnswer = '';
     copyBtn.classList.add('hidden');
+    followupForm.classList.add('hidden');
+    followupInput.value = '';
 
     positionSelPopup(range);
     selPopup.style.display = 'block';
@@ -576,8 +584,74 @@
         bodyEl.innerHTML = renderMarkdown(response.text);
         copyBtn.dataset.copyText = response.text;
         copyBtn.classList.remove('hidden');
+        selPopup.dataset.priorAnswer = response.text;
+        followupForm.classList.remove('hidden');
       }
       positionSelPopup(range);
+    });
+  }
+
+  const followupForm  = selPopup.querySelector('.aif-sel-followup');
+  const followupInput = selPopup.querySelector('.aif-sel-ask');
+  let followupReqId = null;
+
+  followupForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const question = followupInput.value.trim();
+    if (!question) return;
+    sendFollowup(question);
+  });
+
+  async function sendFollowup(question) {
+    const originalText = selPopup.dataset.originalText || '';
+    const prior        = selPopup.dataset.priorAnswer  || '';
+    if (!originalText) return;
+
+    const settings = await getSettings();
+    const apiKey = settings[`${settings.provider}ApiKey`] || '';
+
+    typeEl.textContent = 'FOLLOW-UP';
+    bodyEl.textContent = '···';
+    bodyEl.className = 'aif-sel-body loading';
+    copyBtn.classList.add('hidden');
+    followupInput.disabled = true;
+
+    // Cancel any prior follow-up still in flight.
+    if (followupReqId !== null) {
+      chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: followupReqId });
+    }
+    const myReqId = ++selReqId;
+    followupReqId = myReqId;
+
+    chrome.runtime.sendMessage({
+      action: 'explain',
+      reqId: myReqId,
+      kind: 'followup',
+      text: question,
+      context: { originalText, prior },
+      pageTitle: document.title,
+      provider: settings.provider,
+      apiKey,
+      model: settings.model,
+      ollamaBaseUrl: settings.ollamaBaseUrl
+    }, (response) => {
+      if (myReqId !== followupReqId) return; // superseded
+      followupReqId = null;
+      followupInput.disabled = false;
+      if (selPopup.style.display === 'none') return;
+      bodyEl.className = 'aif-sel-body';
+      if (chrome.runtime.lastError || !response?.success) {
+        bodyEl.textContent = response?.error || 'Failed to fetch.';
+        bodyEl.className = 'aif-sel-body aif-sel-error';
+      } else {
+        bodyEl.innerHTML = renderMarkdown(response.text);
+        copyBtn.dataset.copyText = response.text;
+        copyBtn.classList.remove('hidden');
+        // Chain into prior answer so the next follow-up sees this turn too.
+        selPopup.dataset.priorAnswer = response.text;
+        followupInput.value = '';
+        followupInput.focus();
+      }
     });
   }
 
