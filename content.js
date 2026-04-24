@@ -52,6 +52,21 @@
   let lastPrompt = '';
   let hideBtnTimer = null;
 
+  // ---- Settings cache ----
+
+  const SETTINGS_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'];
+  let cachedSettings = null;
+
+  function getSettings() {
+    if (cachedSettings) return Promise.resolve(cachedSettings);
+    return new Promise(r => chrome.storage.sync.get(SETTINGS_KEYS, data => {
+      cachedSettings = data;
+      r(data);
+    }));
+  }
+
+  chrome.storage.onChanged.addListener(() => { cachedSettings = null; });
+
   hideDropdown();
   hideBtn();
 
@@ -168,7 +183,7 @@
       if (lastPrompt) promptEl.select();
     });
 
-    chrome.storage.sync.get(['provider'], (d) => {
+    getSettings().then(d => {
       const labels = { claude: 'Claude', openai: 'OpenAI', gemini: 'Gemini', ollama: 'Ollama' };
       dropdown.querySelector('.aif-badge').textContent = labels[d.provider] || '⚙ Not configured';
     });
@@ -207,9 +222,7 @@
   dropdown.querySelector('.aif-generate').addEventListener('click', async () => {
     if (!activeField) return;
 
-    const settings = await new Promise(r => {
-      chrome.storage.sync.get(['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'], r);
-    });
+    const settings = await getSettings();
 
     const apiKey = settings[`${settings.provider}ApiKey`] || '';
 
