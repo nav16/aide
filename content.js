@@ -471,6 +471,7 @@
           accumulated += chunk;
           resultEl.textContent = accumulated;
           resultEl.style.display = 'block';
+          await new Promise(r => requestAnimationFrame(r));
         }
         activeGenerateController = null;
         resetBtn();
@@ -694,6 +695,7 @@
           bodyEl.className = 'aif-sel-body';
           bodyEl.innerHTML = renderMarkdown(accumulated);
           positionSelPopup(range);
+          await new Promise(r => requestAnimationFrame(r));
         }
         activeExplainController = null;
       } catch (err) {
