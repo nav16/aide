@@ -1,7 +1,5 @@
 const explainControllers = new Map();
 
-// ---- Non-streaming message handler ----
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generate') {
     handleGenerate(request)
@@ -27,29 +25,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// ---- Streaming port handler ----
-
-chrome.runtime.onConnect.addListener(port => {
-  if (port.name !== 'stream') return;
-  const controller = new AbortController();
-  port.onDisconnect.addListener(() => controller.abort());
-
-  port.onMessage.addListener(async request => {
-    try {
-      const gen = buildStreamGen(request, controller.signal);
-      for await (const chunk of gen) {
-        if (controller.signal.aborted) return;
-        try { port.postMessage({ chunk }); } catch { return; }
-      }
-      try { port.postMessage({ done: true }); } catch {}
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      try { port.postMessage({ error: err.message }); } catch {}
-    }
-  });
-});
-
-// ---- Shared constants & helpers ----
+// ---- Constants & helpers ----
 
 const SYSTEM = 'You are a form-filling assistant. Output ONLY the value to insert into the field — no explanation, no preamble, no quotes, no markdown unless formatting is expected.';
 
@@ -63,7 +39,6 @@ function userMsg(label, userPrompt, pageTitle, constraints) {
   return msg;
 }
 
-
 function explainPrompts(kind, text, pageTitle) {
   return {
     system: kind === 'word'
@@ -75,7 +50,7 @@ function explainPrompts(kind, text, pageTitle) {
   };
 }
 
-// ---- Non-streaming handlers ----
+// ---- Handlers ----
 
 async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, ollamaBaseUrl }, signal) {
   if (!provider) throw new Error('No provider configured. Open extension settings.');
@@ -101,176 +76,7 @@ async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, p
   }
 }
 
-// ---- Streaming dispatch ----
-
-function buildStreamGen(request, signal) {
-  const { provider, apiKey, model, ollamaBaseUrl } = request;
-  let userContent, systemPrompt, maxTokens;
-
-  if (request.action === 'generate') {
-    userContent  = userMsg(request.label, request.prompt, request.pageTitle, request.constraints);
-    systemPrompt = undefined;
-    maxTokens    = MAX_TOKENS.form;
-  } else {
-    const p = explainPrompts(request.kind, request.text, request.pageTitle);
-    userContent  = p.user;
-    systemPrompt = p.system;
-    maxTokens    = MAX_TOKENS.explain;
-  }
-
-  switch (provider) {
-    case 'claude': return streamClaude(apiKey, model, userContent, systemPrompt, maxTokens, signal);
-    case 'openai': return streamOpenAI(apiKey, model, userContent, systemPrompt, maxTokens, signal);
-    case 'gemini': return streamGeminiAsGen(apiKey, model, userContent, systemPrompt, signal);
-    case 'ollama': return streamOllama(ollamaBaseUrl, model, userContent, systemPrompt, signal);
-    default: throw new Error('Unknown provider.');
-  }
-}
-
-async function* streamGeminiAsGen(apiKey, model, userContent, systemPrompt, signal) {
-  // Gemini streaming format is complex; yield single-shot response as one chunk
-  const text = await callGemini(apiKey, model, userContent, systemPrompt, signal);
-  yield text;
-}
-
-// ---- SSE helper ----
-
-async function* readSSE(response) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          if (data !== '[DONE]') yield data;
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// ---- Streaming generators ----
-
-async function* streamClaude(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal,
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: model || 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
-      stream: true,
-      system: systemPrompt || SYSTEM,
-      messages: [{ role: 'user', content: userContent }]
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Claude API error ${res.status}`);
-  }
-  for await (const data of readSSE(res)) {
-    if (signal?.aborted) return;
-    try {
-      const p = JSON.parse(data);
-      if (p.type === 'content_block_delta' && p.delta?.type === 'text_delta' && p.delta.text) {
-        yield p.delta.text;
-      }
-    } catch {}
-  }
-}
-
-async function* streamOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    signal,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: model || 'gpt-4o',
-      max_tokens: maxTokens,
-      stream: true,
-      messages: [
-        { role: 'system', content: systemPrompt || SYSTEM },
-        { role: 'user',   content: userContent }
-      ]
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `OpenAI API error ${res.status}`);
-  }
-  for await (const data of readSSE(res)) {
-    if (signal?.aborted) return;
-    try {
-      const p = JSON.parse(data);
-      const text = p.choices?.[0]?.delta?.content;
-      if (text) yield text;
-    } catch {}
-  }
-}
-
-async function* streamOllama(baseUrl, model, userContent, systemPrompt, signal) {
-  const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    signal,
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      stream: true,
-      messages: [
-        { role: 'system', content: systemPrompt || SYSTEM },
-        { role: 'user',   content: userContent }
-      ]
-    })
-  });
-  if (res.status === 403) {
-    throw new Error('Ollama blocked (403). Restart with OLLAMA_ORIGINS="*" — e.g. OLLAMA_ORIGINS="*" ollama serve');
-  }
-  if (!res.ok) throw new Error(`Ollama error ${res.status}. Is Ollama running at ${base}?`);
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  try {
-    while (true) {
-      if (signal?.aborted) return;
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const p = JSON.parse(line);
-          if (p.message?.content) yield p.message.content;
-          if (p.done) return;
-        } catch {}
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// ---- Non-streaming fetch functions ----
+// ---- Fetch functions ----
 
 async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {

@@ -17,7 +17,7 @@ const STATIC_MODELS = {
   ]
 };
 
-const ALL_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'streamingEnabled'];
+const ALL_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'];
 
 function apiKeyName(provider) { return `${provider}ApiKey`; }
 
@@ -35,7 +35,6 @@ const apiKeyGroup    = $('apiKeyGroup');
 const ollamaGroup    = $('ollamaUrlGroup');
 const refreshBtn     = $('refreshModels');
 const ollamaHint     = $('ollamaHint');
-const streamingEl    = $('streamingEnabled');
 const tabs           = document.querySelectorAll('.tab');
 
 function show(el) { el.classList.remove('hidden'); }
@@ -140,7 +139,7 @@ saveBtn.addEventListener('click', () => {
     return flashStatus('SELECT A MODEL', 'error');
   }
 
-  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl, streamingEnabled: streamingEl.checked }, () => {
+  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl }, () => {
     flashStatus('SETTINGS SAVED', 'success');
   });
 });
@@ -166,7 +165,6 @@ chrome.storage.sync.get(ALL_KEYS, async data => {
   apiKeyEl.value        = data[apiKeyName(provider)] || '';
   ollamaUrlEl.value     = data.ollamaBaseUrl || 'http://localhost:11434';
 
-  streamingEl.checked = !!data.streamingEnabled;
   setActiveTab(provider);
   applyProvider(provider, data.model);
 
