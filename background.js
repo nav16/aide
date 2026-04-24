@@ -1,3 +1,5 @@
+const explainControllers = new Map();
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generate') {
     handleGenerate(request)
@@ -6,10 +8,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   if (request.action === 'explain') {
-    handleExplain(request)
+    const controller = new AbortController();
+    explainControllers.set(request.reqId, controller);
+    handleExplain(request, controller.signal)
       .then(text => sendResponse({ success: true, text }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .catch(err => {
+        if (err.name === 'AbortError') return; // superseded — no response needed
+        sendResponse({ success: false, error: err.message });
+      })
+      .finally(() => explainControllers.delete(request.reqId));
     return true;
+  }
+  if (request.action === 'cancelExplain') {
+    explainControllers.get(request.reqId)?.abort();
+    explainControllers.delete(request.reqId);
   }
 });
 
@@ -21,7 +33,7 @@ function userMsg(label, userPrompt, pageTitle) {
   return `Page: "${pageTitle}"\nField: "${label}"\n${userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.'}`;
 }
 
-async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, ollamaBaseUrl }) {
+async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, ollamaBaseUrl }, signal) {
   if (!provider) throw new Error('No provider configured. Open extension settings.');
   if (provider !== 'ollama' && !apiKey) throw new Error('API key not set. Open extension popup.');
 
@@ -34,10 +46,10 @@ async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, o
     : `Text: "${text}"\nPage context: "${pageTitle}"`;
 
   switch (provider) {
-    case 'claude': return callClaude(apiKey, model, userContent, systemPrompt, MAX_TOKENS.explain);
-    case 'openai': return callOpenAI(apiKey, model, userContent, systemPrompt, MAX_TOKENS.explain);
-    case 'gemini': return callGemini(apiKey, model, userContent, systemPrompt);
-    case 'ollama': return callOllama(ollamaBaseUrl, model, userContent, systemPrompt);
+    case 'claude': return callClaude(apiKey, model, userContent, systemPrompt, MAX_TOKENS.explain, signal);
+    case 'openai': return callOpenAI(apiKey, model, userContent, systemPrompt, MAX_TOKENS.explain, signal);
+    case 'gemini': return callGemini(apiKey, model, userContent, systemPrompt, signal);
+    case 'ollama': return callOllama(ollamaBaseUrl, model, userContent, systemPrompt, signal);
     default: throw new Error('Unknown provider.');
   }
 }
@@ -53,9 +65,10 @@ async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, p
   }
 }
 
-async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form) {
+async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
+    signal,
     headers: {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
@@ -77,9 +90,10 @@ async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = 
   return data.content[0].text.trim();
 }
 
-async function callOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form) {
+async function callOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
+    signal,
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'content-type': 'application/json'
@@ -101,11 +115,12 @@ async function callOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = 
   return data.choices[0].message.content.trim();
 }
 
-async function callGemini(apiKey, model, userContent, systemPrompt) {
+async function callGemini(apiKey, model, userContent, systemPrompt, signal) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
+      signal,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt || SYSTEM }] },
@@ -121,11 +136,12 @@ async function callGemini(apiKey, model, userContent, systemPrompt) {
   return data.candidates[0].content.parts[0].text.trim();
 }
 
-async function callOllama(baseUrl, model, userContent, systemPrompt) {
+async function callOllama(baseUrl, model, userContent, systemPrompt, signal) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
   // /api/chat with system+user roles — /api/generate (completion) causes models to echo the prompt
   const res = await fetch(`${base}/api/chat`, {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       model,

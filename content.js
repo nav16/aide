@@ -364,6 +364,7 @@
 
   let selDebounce = null;
   let selReqId = 0;
+  let lastSentReqId = null;
 
   document.addEventListener('selectionchange', () => {
     clearTimeout(selDebounce);
@@ -403,6 +404,10 @@
     selReqId++;
     const myReqId = selReqId;
 
+    if (lastSentReqId !== null) {
+      chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: lastSentReqId });
+    }
+
     typeEl.textContent = isWord ? 'DEFINE' : 'EXPLAIN';
     bodyEl.textContent = '···';
     bodyEl.className = 'aif-sel-body loading';
@@ -414,8 +419,10 @@
     const settings = await getSettings();
     const apiKey = settings[`${settings.provider}ApiKey`] || '';
 
+    lastSentReqId = myReqId;
     chrome.runtime.sendMessage({
       action: 'explain',
+      reqId: myReqId,
       kind,
       text,
       pageTitle: document.title,
@@ -424,6 +431,7 @@
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl
     }, (response) => {
+      if (myReqId === lastSentReqId) lastSentReqId = null;
       if (myReqId !== selReqId) return; // superseded by newer selection
       if (selPopup.style.display === 'none') return;
       bodyEl.className = 'aif-sel-body';
