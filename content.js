@@ -51,6 +51,8 @@
   let scrollListener = null;
   let lastPrompt = '';
   let hideBtnTimer = null;
+  let activeGeneratePort = null;
+  let activeExplainPort = null;
 
   // ---- Settings cache ----
 
@@ -413,8 +415,6 @@
   let selDebounce = null;
   let selReqId = 0;
   let lastSentReqId = null;
-  let activeExplainPort = null;
-  let activeGeneratePort = null;
 
   document.addEventListener('selectionchange', () => {
     clearTimeout(selDebounce);
