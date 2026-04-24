@@ -34,11 +34,14 @@ function hide(el) { el.classList.add('hidden'); }
 
 // ── Provider tabs ──
 tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
+  tab.addEventListener('click', async () => {
     tabs.forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
-    providerInput.value = tab.dataset.value;
-    applyProvider(tab.dataset.value, null);
+    const provider = tab.dataset.value;
+    providerInput.value = provider;
+    const saved = await new Promise(r => chrome.storage.sync.get(['provider', 'model'], r));
+    const savedModel = saved.provider === provider ? saved.model : null;
+    applyProvider(provider, savedModel);
   });
 });
 
@@ -54,9 +57,18 @@ function applyProvider(provider, selectedModel) {
     show(ollamaGroup);
     show(refreshBtn);
     show(ollamaHint);
-    if (!modelEl.options.length) {
-      populateModels([{ value: '', label: 'Click SYNC to load models' }]);
-    }
+    const baseUrl = ollamaUrlEl.value;
+    fetchOllamaModels(baseUrl).then(models => {
+      if (models && models.length > 0) {
+        populateModels(models, selectedModel);
+      } else {
+        populateModels(
+          selectedModel ? [{ value: selectedModel, label: selectedModel }]
+                        : [{ value: '', label: 'Click ↺ SYNC to load models' }],
+          selectedModel
+        );
+      }
+    });
   } else {
     show(apiKeyGroup);
     hide(ollamaGroup);
