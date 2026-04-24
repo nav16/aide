@@ -4,14 +4,39 @@
   if (window.__aiFiller) return;
   window.__aiFiller = true;
 
+  // Bail early in tiny sub-frames (payment widgets, tracking pixels, ad slots)
+  // so we never inject UI into Stripe Elements, reCAPTCHA, etc.
+  if (window !== window.top) {
+    const w = window.innerWidth  || document.documentElement.clientWidth  || 0;
+    const h = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (w < 250 || h < 80) return;
+  }
+
   const FIELD_SELECTOR = [
     'input[type="text"]', 'input[type="email"]', 'input[type="search"]',
     'input[type="url"]', 'input[type="tel"]', 'input[type="number"]',
-    'input[type="password"]', 'textarea', 'input:not([type])',
+    'textarea', 'input:not([type])',
     '[contenteditable="true"]', '[contenteditable=""]',
     '[contenteditable="plaintext-only"]',
     '[role="textbox"]'
   ].join(', ');
+
+  // autocomplete tokens that signal payment / credentials / one-time codes.
+  // We never want to AI-generate into these (Stripe Checkout, bank login pages,
+  // 2FA inputs). https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#autofill
+  const SENSITIVE_AUTOCOMPLETE = /\b(cc-|credit-card|card-|current-password|new-password|one-time-code|otp|pin|cvc|cvv)\b/i;
+
+  function isSensitiveField(field) {
+    if (field.tagName === 'INPUT' && field.type === 'password') return true;
+    const ac = field.getAttribute('autocomplete');
+    if (ac && SENSITIVE_AUTOCOMPLETE.test(ac)) return true;
+    const name = field.getAttribute('name') || '';
+    const id   = field.id || '';
+    // Common naming patterns for card/OTP inputs across checkout frameworks.
+    if (/\b(card|cvc|cvv|cardnumber|card_number|securitycode|otp|pin|passcode)\b/i.test(name + ' ' + id)) return true;
+    return false;
+  }
+
 
   // ---- DOM setup ----
 
@@ -563,6 +588,7 @@
     if (dropdown.contains(field) || field === btn) return; // never instrument our own UI
     if ((field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') &&
         (field.readOnly || field.disabled)) return;
+    if (isSensitiveField(field)) return;
     // For contenteditable: attach only to the innermost editable node —
     // the one with no contenteditable children. Outer wrappers (Draft.js root,
     // Quill container, etc.) delegate editing to an inner node; targeting them
