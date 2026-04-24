@@ -331,18 +331,28 @@
         // execCommand is what Draft.js/Slate/Quill/ProseMirror all expect —
         // they intercept browser editing events, not DOM mutations.
         // Must run after focus() is settled, which is why this is inside setTimeout.
-        // Clear existing content first, then insert line-by-line.
-        // Inserting the full text (with \n) in one execCommand loses newlines
-        // when replacing existing HTML structure in rich-text editors like Gmail.
-        const cleared = document.execCommand('selectAll', false, null) &&
-                        document.execCommand('delete', false, null);
-        let ok = cleared;
-        if (cleared) {
-          const lines = text.split('\n');
-          lines.forEach((line, i) => {
-            if (i > 0) document.execCommand('insertParagraph', false, null);
-            if (line) ok = document.execCommand('insertText', false, line) && ok;
-          });
+        let ok = false;
+        const hasNewlines = text.includes('\n');
+        if (!hasNewlines) {
+          // Single-line: selectAll + insertText replaces selection in one shot.
+          // Skipping the intermediate delete keeps the editor's internal model in sync
+          // (React/custom editors like Twitter update state via beforeinput on insertText,
+          // but may ignore the delete step and retain the original text when serializing).
+          document.execCommand('selectAll', false, null);
+          ok = document.execCommand('insertText', false, text);
+        } else {
+          // Multi-line: delete first then insert line-by-line — inserting full text with \n
+          // in one execCommand loses newlines in rich-text editors like Gmail.
+          const cleared = document.execCommand('selectAll', false, null) &&
+                          document.execCommand('delete', false, null);
+          ok = cleared;
+          if (cleared) {
+            const lines = text.split('\n');
+            lines.forEach((line, i) => {
+              if (i > 0) document.execCommand('insertParagraph', false, null);
+              if (line) ok = document.execCommand('insertText', false, line) && ok;
+            });
+          }
         }
         if (!ok) {
           // Fallback: bare contenteditable with no framework
