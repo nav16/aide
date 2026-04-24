@@ -10,8 +10,16 @@ const STATIC_MODELS = {
     { value: 'gpt-4o',       label: 'GPT-4o        —  recommended' },
     { value: 'gpt-4o-mini',  label: 'GPT-4o Mini  —  fast' },
     { value: 'gpt-4-turbo',  label: 'GPT-4 Turbo  —  legacy' }
+  ],
+  gemini: [
+    { value: 'gemini-3-flash-preview',       label: 'Gemini 3 Flash      —  fast' },
+    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite  —  cost-efficient' }
   ]
 };
+
+const ALL_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'];
+
+function apiKeyName(provider) { return `${provider}ApiKey`; }
 
 const $ = id => document.getElementById(id);
 
@@ -39,8 +47,9 @@ tabs.forEach(tab => {
     tab.classList.add('active');
     const provider = tab.dataset.value;
     providerInput.value = provider;
-    const saved = await new Promise(r => chrome.storage.sync.get(['provider', 'model'], r));
+    const saved = await new Promise(r => chrome.storage.sync.get(ALL_KEYS, r));
     const savedModel = saved.provider === provider ? saved.model : null;
+    apiKeyEl.value = saved[apiKeyName(provider)] || '';
     applyProvider(provider, savedModel);
   });
 });
@@ -118,9 +127,9 @@ toggleKeyBtn.addEventListener('click', () => {
 
 // ── Save ──
 saveBtn.addEventListener('click', () => {
-  const provider     = providerInput.value;
-  const apiKey       = apiKeyEl.value.trim();
-  const model        = modelEl.value;
+  const provider      = providerInput.value;
+  const apiKey        = apiKeyEl.value.trim();
+  const model         = modelEl.value;
   const ollamaBaseUrl = (ollamaUrlEl.value.trim() || 'http://localhost:11434').replace(/\/$/, '');
 
   if (provider !== 'ollama' && !apiKey) {
@@ -130,7 +139,7 @@ saveBtn.addEventListener('click', () => {
     return flashStatus('SELECT A MODEL', 'error');
   }
 
-  chrome.storage.sync.set({ provider, apiKey, model, ollamaBaseUrl }, () => {
+  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl }, () => {
     flashStatus('SETTINGS SAVED', 'success');
   });
 });
@@ -139,7 +148,6 @@ function flashStatus(msg, type) {
   statusEl.textContent = msg;
   statusEl.className = `status ${type} show`;
 
-  // status dot
   statusDot.className = `hd-dot ${type === 'success' ? 'ok' : 'err'}`;
 
   clearTimeout(statusEl._t);
@@ -151,11 +159,11 @@ function flashStatus(msg, type) {
 }
 
 // ── Load saved settings ──
-chrome.storage.sync.get(['provider', 'apiKey', 'model', 'ollamaBaseUrl'], async data => {
+chrome.storage.sync.get(ALL_KEYS, async data => {
   const provider = data.provider || 'claude';
-  providerInput.value = provider;
-  apiKeyEl.value      = data.apiKey || '';
-  ollamaUrlEl.value   = data.ollamaBaseUrl || 'http://localhost:11434';
+  providerInput.value   = provider;
+  apiKeyEl.value        = data[apiKeyName(provider)] || '';
+  ollamaUrlEl.value     = data.ollamaBaseUrl || 'http://localhost:11434';
 
   setActiveTab(provider);
   applyProvider(provider, data.model);

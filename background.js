@@ -20,8 +20,9 @@ function userMsg(label, userPrompt, pageTitle) {
 }
 
 async function handleExplain({ kind, text, pageTitle }) {
-  const settings = await new Promise(r => chrome.storage.sync.get(['provider', 'apiKey', 'model', 'ollamaBaseUrl'], r));
-  const { provider, apiKey, model, ollamaBaseUrl } = settings;
+  const settings = await new Promise(r => chrome.storage.sync.get(['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'], r));
+  const { provider, model, ollamaBaseUrl } = settings;
+  const apiKey = settings[`${provider}ApiKey`] || '';
   if (!provider) throw new Error('No provider configured. Open extension settings.');
   if (provider !== 'ollama' && !apiKey) throw new Error('API key not set. Open extension popup.');
 
@@ -36,6 +37,7 @@ async function handleExplain({ kind, text, pageTitle }) {
   switch (provider) {
     case 'claude': return callClaude(apiKey, model, userContent, systemPrompt);
     case 'openai': return callOpenAI(apiKey, model, userContent, systemPrompt);
+    case 'gemini': return callGemini(apiKey, model, userContent, systemPrompt);
     case 'ollama': return callOllama(ollamaBaseUrl, model, userContent, systemPrompt);
     default: throw new Error('Unknown provider.');
   }
@@ -46,6 +48,7 @@ async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, p
   switch (provider) {
     case 'claude': return callClaude(apiKey, model, msg);
     case 'openai': return callOpenAI(apiKey, model, msg);
+    case 'gemini': return callGemini(apiKey, model, msg);
     case 'ollama': return callOllama(ollamaBaseUrl, model, msg);
     default: throw new Error('Unknown provider. Configure settings.');
   }
@@ -96,6 +99,26 @@ async function callOpenAI(apiKey, model, userContent, systemPrompt) {
   }
   const data = await res.json();
   return data.choices[0].message.content.trim();
+}
+
+async function callGemini(apiKey, model, userContent, systemPrompt) {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt || SYSTEM }] },
+        contents: [{ parts: [{ text: userContent }] }]
+      })
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API error ${res.status}`);
+  }
+  const data = await res.json();
+  return data.candidates[0].content.parts[0].text.trim();
 }
 
 async function callOllama(baseUrl, model, userContent, systemPrompt) {

@@ -169,7 +169,7 @@
     });
 
     chrome.storage.sync.get(['provider'], (d) => {
-      const labels = { claude: 'Claude', openai: 'OpenAI', ollama: 'Ollama' };
+      const labels = { claude: 'Claude', openai: 'OpenAI', gemini: 'Gemini', ollama: 'Ollama' };
       dropdown.querySelector('.aif-badge').textContent = labels[d.provider] || '⚙ Not configured';
     });
 
@@ -208,13 +208,15 @@
     if (!activeField) return;
 
     const settings = await new Promise(r => {
-      chrome.storage.sync.get(['provider', 'apiKey', 'model', 'ollamaBaseUrl'], r);
+      chrome.storage.sync.get(['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'], r);
     });
+
+    const apiKey = settings[`${settings.provider}ApiKey`] || '';
 
     if (!settings.provider) {
       return showError('Open extension settings and configure a provider first.');
     }
-    if (settings.provider !== 'ollama' && !settings.apiKey) {
+    if (settings.provider !== 'ollama' && !apiKey) {
       return showError('API key not set. Open extension popup to configure.');
     }
 
@@ -230,7 +232,7 @@
     chrome.runtime.sendMessage({
       action: 'generate',
       provider: settings.provider,
-      apiKey: settings.apiKey,
+      apiKey,
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl,
       label: extractLabel(activeField),

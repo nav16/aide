@@ -131,7 +131,7 @@ body::before {
 /* ── Provider tabs ── */
 .tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 3px;
   background: var(--surface);
   border: 1px solid var(--border);
