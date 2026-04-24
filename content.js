@@ -614,6 +614,9 @@
     const settings = await getSettings();
     const apiKey = settings[`${settings.provider}ApiKey`] || '';
 
+    const bodyEl = selPopup.querySelector('.aif-sel-body');
+    const typeEl = selPopup.querySelector('.aif-sel-type');
+
     typeEl.textContent = 'FOLLOW-UP';
     bodyEl.textContent = '···';
     bodyEl.className = 'aif-sel-body loading';
