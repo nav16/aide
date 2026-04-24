@@ -52,6 +52,7 @@
     <div class="aif-header">
       <span class="aif-label-text"></span>
       <span class="aif-badge"></span>
+      <button class="aif-close" aria-label="Close" type="button">✕</button>
     </div>
     <textarea class="aif-prompt" rows="2" placeholder="Describe what to generate (optional)…"></textarea>
     <button class="aif-generate">Generate</button>
@@ -273,6 +274,11 @@
   });
 
   // ---- Generate ----
+
+  dropdown.querySelector('.aif-close').addEventListener('click', () => {
+    hideDropdown();
+    hideBtn();
+  });
 
   dropdown.querySelector('.aif-generate').addEventListener('click', async () => {
     if (!activeField) return;

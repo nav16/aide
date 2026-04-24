@@ -235,7 +235,8 @@
   font-family: monospace;
 }
 
-.aif-sel-close {
+.aif-sel-close,
+.aif-close {
   background: none;
   border: none;
   color: #555;
@@ -246,7 +247,8 @@
   transition: color 0.15s;
 }
 
-.aif-sel-close:hover { color: #aaa; }
+.aif-sel-close:hover,
+.aif-close:hover { color: #aaa; }
 
 .aif-sel-body {
   font-size: 12px;
