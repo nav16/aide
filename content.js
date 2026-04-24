@@ -517,6 +517,10 @@
   }
 
   async function checkSelection() {
+    // User clicking into the follow-up input collapses the page selection and
+    // refires selectionchange; don't dismiss the popup while they're
+    // interacting with our own UI.
+    if (selPopup.contains(document.activeElement)) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) { hideSelPopup(); return; }
     const text = sel.toString().trim();
