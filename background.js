@@ -55,8 +55,17 @@ const SYSTEM = 'You are a form-filling assistant. Output ONLY the value to inser
 
 const MAX_TOKENS = { form: 256, explain: 512 };
 
-function userMsg(label, userPrompt, pageTitle) {
-  return `Page: "${pageTitle}"\nField: "${label}"\n${userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.'}`;
+function userMsg(label, userPrompt, pageTitle, constraints) {
+  let msg = `Page: "${pageTitle}"\nField: "${label}"\n`;
+  if (constraints?.maxChars) msg += `Max characters: ${constraints.maxChars}\n`;
+  if (constraints?.minChars) msg += `Min characters: ${constraints.minChars}\n`;
+  msg += userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.';
+  return msg;
+}
+
+function formMaxTokens(constraints) {
+  if (constraints?.maxChars > 0) return Math.max(64, Math.ceil(constraints.maxChars / 3));
+  return MAX_TOKENS.form;
 }
 
 function explainPrompts(kind, text, pageTitle) {
@@ -85,11 +94,12 @@ async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, o
   }
 }
 
-async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, prompt, pageTitle }) {
-  const msg = userMsg(label, prompt, pageTitle);
+async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, prompt, pageTitle, constraints }) {
+  const msg = userMsg(label, prompt, pageTitle, constraints);
+  const mt  = formMaxTokens(constraints);
   switch (provider) {
-    case 'claude': return callClaude(apiKey, model, msg, undefined, MAX_TOKENS.form);
-    case 'openai': return callOpenAI(apiKey, model, msg, undefined, MAX_TOKENS.form);
+    case 'claude': return callClaude(apiKey, model, msg, undefined, mt);
+    case 'openai': return callOpenAI(apiKey, model, msg, undefined, mt);
     case 'gemini': return callGemini(apiKey, model, msg);
     case 'ollama': return callOllama(ollamaBaseUrl, model, msg);
     default: throw new Error('Unknown provider. Configure settings.');
@@ -103,9 +113,9 @@ function buildStreamGen(request, signal) {
   let userContent, systemPrompt, maxTokens;
 
   if (request.action === 'generate') {
-    userContent  = userMsg(request.label, request.prompt, request.pageTitle);
+    userContent  = userMsg(request.label, request.prompt, request.pageTitle, request.constraints);
     systemPrompt = undefined;
-    maxTokens    = MAX_TOKENS.form;
+    maxTokens    = formMaxTokens(request.constraints);
   } else {
     const p = explainPrompts(request.kind, request.text, request.pageTitle);
     userContent  = p.user;

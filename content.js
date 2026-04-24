@@ -120,6 +120,18 @@
     return 'this field';
   }
 
+  function extractConstraints(field) {
+    const c = {};
+    // Standard maxlength/minlength (works on input, textarea)
+    if (field.maxLength > 0) c.maxChars = field.maxLength;
+    else {
+      const max = parseInt(field.getAttribute('maxlength') || field.getAttribute('data-maxlength'), 10);
+      if (max > 0) c.maxChars = max;
+    }
+    if (field.minLength > 0) c.minChars = field.minLength;
+    return c;
+  }
+
   function humanizeName(name) {
     return name
       .replace(/([A-Z])/g, ' $1')
@@ -173,7 +185,11 @@
 
   function openDropdown(field) {
     const label = extractLabel(field);
-    dropdown.querySelector('.aif-label-text').textContent = `Field: ${label}`;
+    const constraints = extractConstraints(field);
+    const labelText = constraints.maxChars
+      ? `Field: ${label} · ${constraints.maxChars} chars max`
+      : `Field: ${label}`;
+    dropdown.querySelector('.aif-label-text').textContent = labelText;
     dropdown.querySelector('.aif-result').textContent = '';
     dropdown.querySelector('.aif-result').className = 'aif-result';
     dropdown.querySelector('.aif-result').style.display = 'none';
@@ -258,6 +274,7 @@
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl,
       label: extractLabel(activeField),
+      constraints: extractConstraints(activeField),
       prompt: lastPrompt,
       pageTitle: document.title
     };
