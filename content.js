@@ -65,7 +65,10 @@
   selPopup.innerHTML = `
     <div class="aif-sel-header">
       <span class="aif-sel-type"></span>
-      <button class="aif-sel-close" aria-label="Close">✕</button>
+      <div class="aif-sel-actions">
+        <button class="aif-sel-copy hidden" aria-label="Copy" type="button">⧉</button>
+        <button class="aif-sel-close" aria-label="Close" type="button">✕</button>
+      </div>
     </div>
     <div class="aif-sel-body"></div>
   `;
@@ -541,6 +544,7 @@
     bodyEl.textContent = '···';
     bodyEl.className = 'aif-sel-body loading';
     selPopup.dataset.selText = text;
+    copyBtn.classList.add('hidden');
 
     positionSelPopup(range);
     selPopup.style.display = 'block';
@@ -570,10 +574,41 @@
         bodyEl.className = 'aif-sel-body aif-sel-error';
       } else {
         bodyEl.innerHTML = renderMarkdown(response.text);
+        copyBtn.dataset.copyText = response.text;
+        copyBtn.classList.remove('hidden');
       }
       positionSelPopup(range);
     });
   }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // navigator.clipboard can be blocked on non-secure contexts or by CSP;
+      // fall back to the legacy textarea+execCommand path.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-9999px;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch {}
+      ta.remove();
+      return ok;
+    }
+  }
+
+  const copyBtn = selPopup.querySelector('.aif-sel-copy');
+  copyBtn.addEventListener('click', async () => {
+    const text = copyBtn.dataset.copyText || selPopup.querySelector('.aif-sel-body').textContent;
+    if (!text) return;
+    const ok = await copyText(text);
+    const prev = copyBtn.textContent;
+    copyBtn.textContent = ok ? '✓' : '✕';
+    setTimeout(() => { copyBtn.textContent = prev; }, 900);
+  });
 
   function renderMarkdown(text) {
     return text

@@ -236,6 +236,7 @@
 }
 
 .aif-sel-close,
+.aif-sel-copy,
 .aif-close {
   background: none;
   border: none;
@@ -248,7 +249,16 @@
 }
 
 .aif-sel-close:hover,
+.aif-sel-copy:hover,
 .aif-close:hover { color: #aaa; }
+
+.aif-sel-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.aif-sel-copy.hidden { display: none; }
 
 .aif-sel-body {
   font-size: 12px;
