@@ -15,6 +15,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 const SYSTEM = 'You are a form-filling assistant. Output ONLY the value to insert into the field — no explanation, no preamble, no quotes, no markdown unless formatting is expected.';
 
+const MAX_TOKENS = { form: 256, explain: 512 };
+
 function userMsg(label, userPrompt, pageTitle) {
   return `Page: "${pageTitle}"\nField: "${label}"\n${userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.'}`;
 }
@@ -35,8 +37,8 @@ async function handleExplain({ kind, text, pageTitle }) {
     : `Text: "${text}"\nPage context: "${pageTitle}"`;
 
   switch (provider) {
-    case 'claude': return callClaude(apiKey, model, userContent, systemPrompt);
-    case 'openai': return callOpenAI(apiKey, model, userContent, systemPrompt);
+    case 'claude': return callClaude(apiKey, model, userContent, systemPrompt, MAX_TOKENS.explain);
+    case 'openai': return callOpenAI(apiKey, model, userContent, systemPrompt, MAX_TOKENS.explain);
     case 'gemini': return callGemini(apiKey, model, userContent, systemPrompt);
     case 'ollama': return callOllama(ollamaBaseUrl, model, userContent, systemPrompt);
     default: throw new Error('Unknown provider.');
@@ -46,15 +48,15 @@ async function handleExplain({ kind, text, pageTitle }) {
 async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, prompt, pageTitle }) {
   const msg = userMsg(label, prompt, pageTitle);
   switch (provider) {
-    case 'claude': return callClaude(apiKey, model, msg);
-    case 'openai': return callOpenAI(apiKey, model, msg);
+    case 'claude': return callClaude(apiKey, model, msg, undefined, MAX_TOKENS.form);
+    case 'openai': return callOpenAI(apiKey, model, msg, undefined, MAX_TOKENS.form);
     case 'gemini': return callGemini(apiKey, model, msg);
     case 'ollama': return callOllama(ollamaBaseUrl, model, msg);
     default: throw new Error('Unknown provider. Configure settings.');
   }
 }
 
-async function callClaude(apiKey, model, userContent, systemPrompt) {
+async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -65,7 +67,7 @@ async function callClaude(apiKey, model, userContent, systemPrompt) {
     },
     body: JSON.stringify({
       model: model || 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: maxTokens,
       system: systemPrompt || SYSTEM,
       messages: [{ role: 'user', content: userContent }]
     })
@@ -78,7 +80,7 @@ async function callClaude(apiKey, model, userContent, systemPrompt) {
   return data.content[0].text.trim();
 }
 
-async function callOpenAI(apiKey, model, userContent, systemPrompt) {
+async function callOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -87,6 +89,7 @@ async function callOpenAI(apiKey, model, userContent, systemPrompt) {
     },
     body: JSON.stringify({
       model: model || 'gpt-4o',
+      max_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt || SYSTEM },
         { role: 'user',   content: userContent }
