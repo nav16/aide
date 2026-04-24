@@ -96,14 +96,14 @@
   // itself never treats synthetic InputEvents as trusted, so if nothing cancels
   // it, the caller must fall back to another insertion path.
   // Returns true if the editor consumed it.
-  function dispatchBeforeInput(field, text) {
+  function dispatchBeforeInput(field, text, inputType) {
     let dt = null;
     try {
       dt = new DataTransfer();
       dt.setData('text/plain', text);
     } catch { /* DataTransfer constructor unavailable in some sandboxes */ }
     const ev = new InputEvent('beforeinput', {
-      inputType: 'insertReplacementText',
+      inputType,
       data: text,
       dataTransfer: dt,
       bubbles: true,
@@ -126,9 +126,13 @@
 
         // 1. beforeinput — future-proof replacement for execCommand. Lexical,
         // modern ProseMirror, Slate, and other editors listen for InputEvents
-        // with inputType 'insertReplacementText' and will apply the change
-        // themselves, then call preventDefault() to signal they handled it.
-        if (dispatchBeforeInput(field, text)) return;
+        // and apply the change through their own reducers, calling
+        // preventDefault() to signal they handled it. Try 'insertText' first
+        // (canonical typing path, what ChatGPT/Claude.ai/Gemini reduce) and
+        // fall back to 'insertReplacementText' for editors that only catch
+        // the spellcheck-style inputType.
+        if (dispatchBeforeInput(field, text, 'insertText')) return;
+        if (dispatchBeforeInput(field, text, 'insertReplacementText')) return;
 
         // 2. execCommand — Draft.js, Quill, older TinyMCE, Gmail compose.
         let ok = false;
