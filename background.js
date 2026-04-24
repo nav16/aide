@@ -1,10 +1,17 @@
 const explainControllers = new Map();
+const generateControllers = new Map();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generate') {
-    handleGenerate(request)
+    const controller = new AbortController();
+    if (request.reqId != null) generateControllers.set(request.reqId, controller);
+    handleGenerate(request, controller.signal)
       .then(text => sendResponse({ success: true, text }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .catch(err => {
+        if (err.name === 'AbortError') return;
+        sendResponse({ success: false, error: err.message });
+      })
+      .finally(() => { if (request.reqId != null) generateControllers.delete(request.reqId); });
     return true;
   }
   if (request.action === 'explain') {
@@ -22,6 +29,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'cancelExplain') {
     explainControllers.get(request.reqId)?.abort();
     explainControllers.delete(request.reqId);
+  }
+  if (request.action === 'cancelGenerate') {
+    generateControllers.get(request.reqId)?.abort();
+    generateControllers.delete(request.reqId);
   }
 });
 
@@ -65,13 +76,13 @@ async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, o
   }
 }
 
-async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, prompt, pageTitle, constraints }) {
+async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, prompt, pageTitle, constraints }, signal) {
   const msg = userMsg(label, prompt, pageTitle, constraints);
   switch (provider) {
-    case 'claude': return callClaude(apiKey, model, msg, undefined, MAX_TOKENS.form);
-    case 'openai': return callOpenAI(apiKey, model, msg, undefined, MAX_TOKENS.form);
-    case 'gemini': return callGemini(apiKey, model, msg);
-    case 'ollama': return callOllama(ollamaBaseUrl, model, msg);
+    case 'claude': return callClaude(apiKey, model, msg, undefined, MAX_TOKENS.form, signal);
+    case 'openai': return callOpenAI(apiKey, model, msg, undefined, MAX_TOKENS.form, signal);
+    case 'gemini': return callGemini(apiKey, model, msg, undefined, signal);
+    case 'ollama': return callOllama(ollamaBaseUrl, model, msg, undefined, signal);
     default: throw new Error('Unknown provider. Configure settings.');
   }
 }

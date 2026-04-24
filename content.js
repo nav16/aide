@@ -78,6 +78,8 @@
   let scrollListener = null;
   let lastPrompt = '';
   let hideBtnTimer = null;
+  let genReqCounter = 0;
+  let currentGenReqId = null;
 
   // ---- Settings cache ----
 
@@ -204,6 +206,12 @@
       window.removeEventListener('scroll', scrollListener, true);
       scrollListener = null;
     }
+    // Abort any in-flight generate so the user isn't stuck waiting for a
+    // response they've already dismissed (Escape, click-outside, new field).
+    if (currentGenReqId !== null) {
+      chrome.runtime.sendMessage({ action: 'cancelGenerate', reqId: currentGenReqId });
+      currentGenReqId = null;
+    }
   }
 
   // ---- Show dropdown ----
@@ -292,8 +300,18 @@
     resultEl.className = 'aif-result';
     resultEl.style.display = 'none';
 
+    // If the user clicks Generate twice in a row, abort the first. Normally
+    // the button is disabled while running, but the Cmd/Ctrl+Enter shortcut
+    // can still fire during the in-flight window.
+    if (currentGenReqId !== null) {
+      chrome.runtime.sendMessage({ action: 'cancelGenerate', reqId: currentGenReqId });
+    }
+    const reqId = ++genReqCounter;
+    currentGenReqId = reqId;
+
     const msgPayload = {
       action: 'generate',
+      reqId,
       provider: settings.provider,
       apiKey,
       model: settings.model,
@@ -311,6 +329,8 @@
     };
 
     chrome.runtime.sendMessage(msgPayload, (response) => {
+      if (reqId !== currentGenReqId) return; // superseded or cancelled
+      currentGenReqId = null;
       resetBtn();
       if (chrome.runtime.lastError) {
         return showError('Extension error. Reload the page and try again.');
