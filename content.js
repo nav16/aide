@@ -51,8 +51,8 @@
   let scrollListener = null;
   let lastPrompt = '';
   let hideBtnTimer = null;
-  let activeGeneratePort = null;
-  let activeExplainPort = null;
+  let activeGenerateController = null;
+  let activeExplainController = null;
 
   // ---- Settings cache ----
 
@@ -141,6 +141,179 @@
       .replace(/^\w/, c => c.toUpperCase());
   }
 
+  // ---- Direct streaming (content script fetch — no service worker buffering) ----
+
+  const FORM_SYSTEM = 'You are a form-filling assistant. Output ONLY the value to insert into the field — no explanation, no preamble, no quotes, no markdown unless formatting is expected.';
+  const STREAM_MAX_TOKENS = { form: 256, explain: 512 };
+
+  function buildUserMsg(label, constraints, prompt, pageTitle) {
+    let msg = `Page: "${pageTitle}"\nField: "${label}"\n`;
+    if (constraints?.maxChars) msg += `Max characters: ${constraints.maxChars}\n`;
+    if (constraints?.minChars) msg += `Min characters: ${constraints.minChars}\n`;
+    msg += prompt ? `Instruction: ${prompt}` : 'Generate appropriate content for this field.';
+    return msg;
+  }
+
+  function buildExplainPrompts(kind, text, pageTitle) {
+    return {
+      system: kind === 'word'
+        ? 'You are a concise dictionary. Given a word, respond with: part of speech, definition (1-2 sentences), and a short example sentence. No preamble.'
+        : 'You are a helpful explainer. Given selected text, explain it clearly in 2-3 sentences for a general audience. No preamble.',
+      user: kind === 'word'
+        ? `Word: "${text}"\nPage context: "${pageTitle}"`
+        : `Text: "${text}"\nPage context: "${pageTitle}"`
+    };
+  }
+
+  async function* readSSE(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const d = line.slice(6).trim();
+            if (d !== '[DONE]') yield d;
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async function* streamText(settings, userContent, systemPrompt, maxTokens, signal) {
+    const { provider, model, ollamaBaseUrl } = settings;
+    const apiKey = settings[`${provider}ApiKey`] || '';
+
+    if (provider === 'claude') {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', signal,
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: model || 'claude-sonnet-4-6',
+          max_tokens: maxTokens,
+          stream: true,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userContent }]
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Claude API error ${res.status}`);
+      }
+      for await (const data of readSSE(res)) {
+        if (signal?.aborted) return;
+        try {
+          const p = JSON.parse(data);
+          if (p.type === 'content_block_delta' && p.delta?.type === 'text_delta' && p.delta.text) {
+            yield p.delta.text;
+          }
+        } catch {}
+      }
+
+    } else if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST', signal,
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: model || 'gpt-4o',
+          max_tokens: maxTokens,
+          stream: true,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userContent }
+          ]
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `OpenAI API error ${res.status}`);
+      }
+      for await (const data of readSSE(res)) {
+        if (signal?.aborted) return;
+        try {
+          const p = JSON.parse(data);
+          const text = p.choices?.[0]?.delta?.content;
+          if (text) yield text;
+        } catch {}
+      }
+
+    } else if (provider === 'ollama') {
+      const base = (ollamaBaseUrl || 'http://localhost:11434').replace(/\/$/, '');
+      const res = await fetch(`${base}/api/chat`, {
+        method: 'POST', signal,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model, stream: true,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userContent }
+          ]
+        })
+      });
+      if (res.status === 403) throw new Error('Ollama blocked (403). Restart with OLLAMA_ORIGINS="*"');
+      if (!res.ok) throw new Error(`Ollama error ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      try {
+        while (true) {
+          if (signal?.aborted) return;
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const p = JSON.parse(line);
+              if (p.message?.content) yield p.message.content;
+              if (p.done) return;
+            } catch {}
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+    } else if (provider === 'gemini') {
+      // Gemini streaming format is complex; single-shot, yield full response as one chunk
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST', signal,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ parts: [{ text: userContent }] }]
+          })
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Gemini API error ${res.status}`);
+      }
+      const data = await res.json();
+      yield data.candidates[0].content.parts[0].text.trim();
+
+    } else {
+      throw new Error('Unknown provider. Configure settings.');
+    }
+  }
+
   // ---- Positioning ----
 
   function positionBtn(field) {
@@ -175,9 +348,9 @@
       window.removeEventListener('scroll', scrollListener, true);
       scrollListener = null;
     }
-    if (activeGeneratePort) {
-      activeGeneratePort.disconnect();
-      activeGeneratePort = null;
+    if (activeGenerateController) {
+      activeGenerateController.abort();
+      activeGenerateController = null;
     }
   }
 
@@ -286,36 +459,30 @@
     };
 
     if (settings.streamingEnabled) {
-      const port = chrome.runtime.connect({ name: 'stream' });
-      activeGeneratePort = port;
+      const controller = new AbortController();
+      activeGenerateController = controller;
       let accumulated = '';
-
-      port.onMessage.addListener(msg => {
-        if (msg.chunk) {
-          accumulated += msg.chunk;
+      const userContent = buildUserMsg(
+        msgPayload.label, msgPayload.constraints, lastPrompt, document.title
+      );
+      try {
+        const gen = streamText(settings, userContent, FORM_SYSTEM, STREAM_MAX_TOKENS.form, controller.signal);
+        for await (const chunk of gen) {
+          accumulated += chunk;
           resultEl.textContent = accumulated;
           resultEl.style.display = 'block';
-        } else if (msg.done) {
-          activeGeneratePort = null;
-          port.disconnect();
-          resetBtn();
-          const field = activeField;
-          hideDropdown();
-          hideBtn();
-          insertIntoField(field, accumulated.trim());
-        } else if (msg.error) {
-          activeGeneratePort = null;
-          port.disconnect();
-          showError(msg.error);
         }
-      });
-
-      port.onDisconnect.addListener(() => {
-        if (activeGeneratePort === port) activeGeneratePort = null;
+        activeGenerateController = null;
         resetBtn();
-      });
-
-      port.postMessage(msgPayload);
+        const field = activeField;
+        hideDropdown();
+        hideBtn();
+        insertIntoField(field, accumulated.trim());
+      } catch (err) {
+        activeGenerateController = null;
+        if (err.name !== 'AbortError') showError(err.message || 'Generation failed.');
+        else resetBtn();
+      }
     } else {
       chrome.runtime.sendMessage(msgPayload, (response) => {
         resetBtn();
@@ -433,9 +600,9 @@
 
   function hideSelPopup() {
     selPopup.style.display = 'none';
-    if (activeExplainPort) {
-      activeExplainPort.disconnect();
-      activeExplainPort = null;
+    if (activeExplainController) {
+      activeExplainController.abort();
+      activeExplainController = null;
     }
   }
 
@@ -484,9 +651,9 @@
     if (lastSentReqId !== null) {
       chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: lastSentReqId });
     }
-    if (activeExplainPort) {
-      activeExplainPort.disconnect();
-      activeExplainPort = null;
+    if (activeExplainController) {
+      activeExplainController.abort();
+      activeExplainController = null;
     }
 
     typeEl.textContent = isWord ? 'DEFINE' : 'EXPLAIN';
@@ -512,42 +679,31 @@
     };
 
     if (settings.streamingEnabled) {
-      if (activeExplainPort) {
-        activeExplainPort.disconnect();
-        activeExplainPort = null;
-      }
-
-      const port = chrome.runtime.connect({ name: 'stream' });
-      activeExplainPort = port;
+      const controller = new AbortController();
+      activeExplainController = controller;
+      const { system, user } = buildExplainPrompts(kind, text, document.title);
       let accumulated = '';
-
-      port.onMessage.addListener(msg => {
-        if (myReqId !== selReqId || selPopup.style.display === 'none') {
-          port.disconnect();
-          return;
-        }
-        if (msg.chunk) {
-          accumulated += msg.chunk;
+      try {
+        const gen = streamText(settings, user, system, STREAM_MAX_TOKENS.explain, controller.signal);
+        for await (const chunk of gen) {
+          if (myReqId !== selReqId || selPopup.style.display === 'none') {
+            controller.abort();
+            return;
+          }
+          accumulated += chunk;
           bodyEl.className = 'aif-sel-body';
           bodyEl.innerHTML = renderMarkdown(accumulated);
           positionSelPopup(range);
-        } else if (msg.done) {
-          if (activeExplainPort === port) activeExplainPort = null;
-          port.disconnect();
-        } else if (msg.error) {
-          if (activeExplainPort === port) activeExplainPort = null;
-          port.disconnect();
-          bodyEl.textContent = msg.error;
-          bodyEl.className = 'aif-sel-body aif-sel-error';
-          positionSelPopup(range);
         }
-      });
-
-      port.onDisconnect.addListener(() => {
-        if (activeExplainPort === port) activeExplainPort = null;
-      });
-
-      port.postMessage(explainPayload);
+        activeExplainController = null;
+      } catch (err) {
+        activeExplainController = null;
+        if (err.name === 'AbortError') return;
+        if (myReqId !== selReqId || selPopup.style.display === 'none') return;
+        bodyEl.textContent = err.message || 'Failed to fetch.';
+        bodyEl.className = 'aif-sel-body aif-sel-error';
+        positionSelPopup(range);
+      }
     } else {
       lastSentReqId = myReqId;
       chrome.runtime.sendMessage({ ...explainPayload, reqId: myReqId }, (response) => {
