@@ -54,7 +54,7 @@
 
   // ---- Settings cache ----
 
-  const SETTINGS_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'];
+  const SETTINGS_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'streamingEnabled'];
   let cachedSettings = null;
 
   function getSettings() {
@@ -161,6 +161,10 @@
       window.removeEventListener('scroll', scrollListener, true);
       scrollListener = null;
     }
+    if (activeGeneratePort) {
+      activeGeneratePort.disconnect();
+      activeGeneratePort = null;
+    }
   }
 
   // ---- Show dropdown ----
@@ -240,9 +244,12 @@
     genBtn.disabled = true;
     genBtn.textContent = '· · ·';
     genBtn.classList.add('loading');
-    dropdown.querySelector('.aif-result').style.display = 'none';
 
-    chrome.runtime.sendMessage({
+    const resultEl = dropdown.querySelector('.aif-result');
+    resultEl.className = 'aif-result';
+    resultEl.style.display = 'none';
+
+    const msgPayload = {
       action: 'generate',
       provider: settings.provider,
       apiKey,
@@ -251,24 +258,61 @@
       label: extractLabel(activeField),
       prompt: lastPrompt,
       pageTitle: document.title
-    }, (response) => {
+    };
+
+    const resetBtn = () => {
       genBtn.disabled = false;
       genBtn.textContent = 'Generate';
       genBtn.classList.remove('loading');
+    };
 
-      if (chrome.runtime.lastError) {
-        return showError('Extension error. Reload the page and try again.');
-      }
-      if (response?.success) {
-        const field = activeField;
-        const text  = response.text;
-        hideDropdown();
-        hideBtn();
-        insertIntoField(field, text);
-      } else {
-        showError(response?.error || 'Generation failed.');
-      }
-    });
+    if (settings.streamingEnabled) {
+      const port = chrome.runtime.connect({ name: 'stream' });
+      activeGeneratePort = port;
+      let accumulated = '';
+
+      port.onMessage.addListener(msg => {
+        if (msg.chunk) {
+          accumulated += msg.chunk;
+          resultEl.textContent = accumulated;
+          resultEl.style.display = 'block';
+        } else if (msg.done) {
+          activeGeneratePort = null;
+          port.disconnect();
+          resetBtn();
+          const field = activeField;
+          hideDropdown();
+          hideBtn();
+          insertIntoField(field, accumulated.trim());
+        } else if (msg.error) {
+          activeGeneratePort = null;
+          port.disconnect();
+          showError(msg.error);
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        if (activeGeneratePort === port) activeGeneratePort = null;
+        resetBtn();
+      });
+
+      port.postMessage(msgPayload);
+    } else {
+      chrome.runtime.sendMessage(msgPayload, (response) => {
+        resetBtn();
+        if (chrome.runtime.lastError) {
+          return showError('Extension error. Reload the page and try again.');
+        }
+        if (response?.success) {
+          const field = activeField;
+          hideDropdown();
+          hideBtn();
+          insertIntoField(field, response.text);
+        } else {
+          showError(response?.error || 'Generation failed.');
+        }
+      });
+    }
   });
 
   dropdown.querySelector('.aif-prompt').addEventListener('keydown', (e) => {
@@ -360,11 +404,17 @@
 
   function hideSelPopup() {
     selPopup.style.display = 'none';
+    if (activeExplainPort) {
+      activeExplainPort.disconnect();
+      activeExplainPort = null;
+    }
   }
 
   let selDebounce = null;
   let selReqId = 0;
   let lastSentReqId = null;
+  let activeExplainPort = null;
+  let activeGeneratePort = null;
 
   document.addEventListener('selectionchange', () => {
     clearTimeout(selDebounce);
@@ -407,6 +457,10 @@
     if (lastSentReqId !== null) {
       chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: lastSentReqId });
     }
+    if (activeExplainPort) {
+      activeExplainPort.disconnect();
+      activeExplainPort = null;
+    }
 
     typeEl.textContent = isWord ? 'DEFINE' : 'EXPLAIN';
     bodyEl.textContent = '···';
@@ -419,10 +473,8 @@
     const settings = await getSettings();
     const apiKey = settings[`${settings.provider}ApiKey`] || '';
 
-    lastSentReqId = myReqId;
-    chrome.runtime.sendMessage({
+    const explainPayload = {
       action: 'explain',
-      reqId: myReqId,
       kind,
       text,
       pageTitle: document.title,
@@ -430,19 +482,61 @@
       apiKey,
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl
-    }, (response) => {
-      if (myReqId === lastSentReqId) lastSentReqId = null;
-      if (myReqId !== selReqId) return; // superseded by newer selection
-      if (selPopup.style.display === 'none') return;
-      bodyEl.className = 'aif-sel-body';
-      if (chrome.runtime.lastError || !response?.success) {
-        bodyEl.textContent = response?.error || 'Failed to fetch.';
-        bodyEl.className = 'aif-sel-body aif-sel-error';
-      } else {
-        bodyEl.innerHTML = renderMarkdown(response.text);
+    };
+
+    if (settings.streamingEnabled) {
+      if (activeExplainPort) {
+        activeExplainPort.disconnect();
+        activeExplainPort = null;
       }
-      positionSelPopup(range);
-    });
+
+      const port = chrome.runtime.connect({ name: 'stream' });
+      activeExplainPort = port;
+      let accumulated = '';
+
+      port.onMessage.addListener(msg => {
+        if (myReqId !== selReqId || selPopup.style.display === 'none') {
+          port.disconnect();
+          return;
+        }
+        if (msg.chunk) {
+          accumulated += msg.chunk;
+          bodyEl.className = 'aif-sel-body';
+          bodyEl.innerHTML = renderMarkdown(accumulated);
+          positionSelPopup(range);
+        } else if (msg.done) {
+          if (activeExplainPort === port) activeExplainPort = null;
+          port.disconnect();
+        } else if (msg.error) {
+          if (activeExplainPort === port) activeExplainPort = null;
+          port.disconnect();
+          bodyEl.textContent = msg.error;
+          bodyEl.className = 'aif-sel-body aif-sel-error';
+          positionSelPopup(range);
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        if (activeExplainPort === port) activeExplainPort = null;
+      });
+
+      port.postMessage(explainPayload);
+    } else {
+      lastSentReqId = myReqId;
+      chrome.runtime.sendMessage({ ...explainPayload, reqId: myReqId }, (response) => {
+        if (myReqId === lastSentReqId) lastSentReqId = null;
+        if (myReqId !== selReqId) return; // superseded by newer selection
+        if (selPopup.style.display === 'none') return;
+        bodyEl.className = 'aif-sel-body';
+        if (chrome.runtime.lastError || !response?.success) {
+          bodyEl.textContent = response?.error || 'Failed to fetch.';
+          bodyEl.className = 'aif-sel-body aif-sel-error';
+        } else {
+          bodyEl.innerHTML = renderMarkdown(response.text);
+        }
+        positionSelPopup(range);
+      });
+    }
   }
 
   function renderMarkdown(text) {
