@@ -409,7 +409,12 @@
     let el = node.nodeType === 3 ? node.parentElement : node;
     while (el) {
       if (el.matches?.(FIELD_SELECTOR)) return true;
-      el = el.parentElement;
+      if (el.parentElement) {
+        el = el.parentElement;
+      } else {
+        const root = el.getRootNode();
+        el = root instanceof ShadowRoot ? root.host : null;
+      }
     }
     return false;
   }
@@ -524,7 +529,13 @@
     // Quill container, etc.) delegate editing to an inner node; targeting them
     // causes Range ops to corrupt the editor's internal DOM structure.
     if (isContentEditable(field)) {
-      if (field.querySelector('[contenteditable="true"], [contenteditable=""]')) return;
+      let innerEditable = false;
+      walkRoots(field, r => {
+        if (innerEditable) return;
+        if (r === field) return;
+        if (r.querySelector?.('[contenteditable="true"], [contenteditable=""]')) innerEditable = true;
+      });
+      if (innerEditable) return;
     }
 
     field.dataset.aifAttached = '1';
@@ -532,19 +543,39 @@
     field.addEventListener('blur', onBlur);
   }
 
-  function attachAll() {
-    document.querySelectorAll(FIELD_SELECTOR).forEach(attach);
+  // Pierce shadow DOM: visit node + every shadow root reachable through descendants.
+  // Native querySelectorAll stops at shadow boundaries; many apps (Salesforce,
+  // YouTube chrome, design-system widgets) render form fields inside shadow trees.
+  function walkRoots(node, visit) {
+    visit(node);
+    if (node.shadowRoot) walkRoots(node.shadowRoot, visit);
+    const all = node.querySelectorAll ? node.querySelectorAll('*') : null;
+    if (!all) return;
+    for (const el of all) if (el.shadowRoot) walkRoots(el.shadowRoot, visit);
   }
 
-  attachAll();
+  const observedShadowRoots = new WeakSet();
 
-  new MutationObserver((muts) => {
+  function scanAndObserve(node) {
+    if (node.nodeType === 1 && node.matches?.(FIELD_SELECTOR)) attach(node);
+    walkRoots(node, r => {
+      r.querySelectorAll?.(FIELD_SELECTOR).forEach(attach);
+      if (r instanceof ShadowRoot && !observedShadowRoots.has(r)) {
+        observedShadowRoots.add(r);
+        new MutationObserver(onMutations).observe(r, { childList: true, subtree: true });
+      }
+    });
+  }
+
+  function onMutations(muts) {
     for (const m of muts) {
       for (const node of m.addedNodes) {
         if (node.nodeType !== 1) continue;
-        if (node.matches?.(FIELD_SELECTOR)) attach(node);
-        node.querySelectorAll?.(FIELD_SELECTOR).forEach(attach);
+        scanAndObserve(node);
       }
     }
-  }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  scanAndObserve(document.body);
+  new MutationObserver(onMutations).observe(document.body, { childList: true, subtree: true });
 })();
