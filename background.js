@@ -76,10 +76,47 @@ async function handleGenerate({ provider, apiKey, model, ollamaBaseUrl, label, p
   }
 }
 
+// ---- Transient-failure retry ----
+
+// One retry with short backoff on network errors, 429, and 5xx. Covers the
+// most common flakes (rate-limit spikes, gateway timeouts, brief net drops)
+// without turning a hard failure into a long hang.
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+    const t = setTimeout(done, ms);
+    function done() { signal?.removeEventListener('abort', onAbort); resolve(); }
+    function onAbort() { clearTimeout(t); reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })); }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function fetchWithRetry(url, options) {
+  const signal = options?.signal;
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    await sleep(500, signal);
+    return fetch(url, options);
+  }
+  const transient = res.status === 429 || (res.status >= 500 && res.status < 600);
+  if (!transient) return res;
+  let delay = res.status === 429 ? 1000 : 750;
+  if (res.status === 429) {
+    const ra = res.headers.get('retry-after');
+    const secs = ra ? parseInt(ra, 10) : NaN;
+    if (!isNaN(secs)) delay = Math.min(secs * 1000, 5000);
+  }
+  await sleep(delay, signal);
+  return fetch(url, options);
+}
+
 // ---- Fetch functions ----
 
 async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal,
     headers: {
@@ -104,7 +141,7 @@ async function callClaude(apiKey, model, userContent, systemPrompt, maxTokens = 
 }
 
 async function callOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = MAX_TOKENS.form, signal) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     signal,
     headers: {
@@ -129,7 +166,7 @@ async function callOpenAI(apiKey, model, userContent, systemPrompt, maxTokens = 
 }
 
 async function callGemini(apiKey, model, userContent, systemPrompt, signal) {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
@@ -152,7 +189,7 @@ async function callGemini(apiKey, model, userContent, systemPrompt, signal) {
 async function callOllama(baseUrl, model, userContent, systemPrompt, signal) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
   // /api/chat with system+user roles — /api/generate (completion) causes models to echo the prompt
-  const res = await fetch(`${base}/api/chat`, {
+  const res = await fetchWithRetry(`${base}/api/chat`, {
     method: 'POST',
     signal,
     headers: { 'content-type': 'application/json' },
