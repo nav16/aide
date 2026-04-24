@@ -599,11 +599,27 @@
   const followupInput = selPopup.querySelector('.aif-sel-ask');
   let followupReqId = null;
 
-  followupForm.addEventListener('submit', (e) => {
-    e.preventDefault();
+  function submitFollowup() {
     const question = followupInput.value.trim();
     if (!question) return;
     sendFollowup(question);
+  }
+
+  followupForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitFollowup();
+  });
+
+  // Explicit Enter handler — some pages wrap our UI inside their own form or
+  // stop submit events from bubbling, so rely on keydown rather than the
+  // implicit form submit to stay robust. Shift+Enter reserved for future
+  // multi-line input.
+  followupInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      submitFollowup();
+    }
   });
 
   async function sendFollowup(question) {
