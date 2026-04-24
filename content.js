@@ -8,7 +8,9 @@
     'input[type="text"]', 'input[type="email"]', 'input[type="search"]',
     'input[type="url"]', 'input[type="tel"]', 'input[type="number"]',
     'input[type="password"]', 'textarea', 'input:not([type])',
-    '[contenteditable="true"]', '[contenteditable=""]'
+    '[contenteditable="true"]', '[contenteditable=""]',
+    '[contenteditable="plaintext-only"]',
+    '[role="textbox"]'
   ].join(', ');
 
   // ---- DOM setup ----
@@ -73,8 +75,12 @@
   // ---- Helpers ----
 
   function isContentEditable(el) {
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
     const ce = el.getAttribute('contenteditable');
-    return ce === 'true' || ce === '';
+    if (ce === 'true' || ce === '' || ce === 'plaintext-only') return true;
+    // role="textbox" on a non-input element — ARIA widget, treat like
+    // contenteditable for insertion (editor handles beforeinput/paste itself).
+    return el.getAttribute('role') === 'textbox';
   }
 
   // ---- Label extraction ----
@@ -566,7 +572,7 @@
       walkRoots(field, r => {
         if (innerEditable) return;
         if (r === field) return;
-        if (r.querySelector?.('[contenteditable="true"], [contenteditable=""]')) innerEditable = true;
+        if (r.querySelector?.('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]')) innerEditable = true;
       });
       if (innerEditable) return;
     }
