@@ -379,7 +379,7 @@
     return false;
   }
 
-  function checkSelection() {
+  async function checkSelection() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) { hideSelPopup(); return; }
     const text = sel.toString().trim();
@@ -411,11 +411,18 @@
     positionSelPopup(range);
     selPopup.style.display = 'block';
 
+    const settings = await getSettings();
+    const apiKey = settings[`${settings.provider}ApiKey`] || '';
+
     chrome.runtime.sendMessage({
       action: 'explain',
       kind,
       text,
-      pageTitle: document.title
+      pageTitle: document.title,
+      provider: settings.provider,
+      apiKey,
+      model: settings.model,
+      ollamaBaseUrl: settings.ollamaBaseUrl
     }, (response) => {
       if (myReqId !== selReqId) return; // superseded by newer selection
       if (selPopup.style.display === 'none') return;

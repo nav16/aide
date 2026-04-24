@@ -21,10 +21,7 @@ function userMsg(label, userPrompt, pageTitle) {
   return `Page: "${pageTitle}"\nField: "${label}"\n${userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.'}`;
 }
 
-async function handleExplain({ kind, text, pageTitle }) {
-  const settings = await new Promise(r => chrome.storage.sync.get(['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey'], r));
-  const { provider, model, ollamaBaseUrl } = settings;
-  const apiKey = settings[`${provider}ApiKey`] || '';
+async function handleExplain({ kind, text, pageTitle, provider, apiKey, model, ollamaBaseUrl }) {
   if (!provider) throw new Error('No provider configured. Open extension settings.');
   if (provider !== 'ollama' && !apiKey) throw new Error('API key not set. Open extension popup.');
 
