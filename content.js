@@ -27,13 +27,13 @@
   const SENSITIVE_AUTOCOMPLETE = /\b(cc-|credit-card|card-|current-password|new-password|one-time-code|otp|pin|cvc|cvv)\b/i;
 
   function isSensitiveField(field) {
-    if (field.tagName === 'INPUT' && field.type === 'password') return true;
     const ac = field.getAttribute('autocomplete');
     if (ac && SENSITIVE_AUTOCOMPLETE.test(ac)) return true;
     const name = field.getAttribute('name') || '';
     const id   = field.id || '';
-    // Common naming patterns for card/OTP inputs across checkout frameworks.
-    if (/\b(card|cvc|cvv|cardnumber|card_number|securitycode|otp|pin|passcode)\b/i.test(name + ' ' + id)) return true;
+    // Common naming patterns for card/OTP/password inputs across checkout
+    // frameworks and form libraries that don't set autocomplete properly.
+    if (/\b(card|cvc|cvv|cardnumber|card_number|securitycode|otp|pin|passcode|password)\b/i.test(name + ' ' + id)) return true;
     return false;
   }
 
