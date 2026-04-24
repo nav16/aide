@@ -1,0 +1,229 @@
+(function () {
+  'use strict';
+  if (window.__aide?.skip) return;
+  const A = (window.__aide ||= {});
+
+  // WeakSet instead of a DOM dataset flag: React/Vue/etc. can re-render from
+  // state and strip custom dataset attrs, which would make us re-attach
+  // listeners on every re-render. A WeakSet keyed by the element survives
+  // re-renders without mutating the DOM, and the entry GCs when the node
+  // itself is collected.
+  A.attachedFields = new WeakSet();
+
+  A.isContentEditable = function (el) {
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
+    const ce = el.getAttribute('contenteditable');
+    if (ce === 'true' || ce === '' || ce === 'plaintext-only') return true;
+    // role="textbox" on a non-input element — ARIA widget, treat like
+    // contenteditable for insertion (editor handles beforeinput/paste itself).
+    return el.getAttribute('role') === 'textbox';
+  };
+
+  A.isSensitiveField = function (field) {
+    const ac = field.getAttribute('autocomplete');
+    if (ac && A.SENSITIVE_AUTOCOMPLETE.test(ac)) return true;
+    const name = field.getAttribute('name') || '';
+    const id   = field.id || '';
+    // Common naming patterns for card/OTP/password inputs across checkout
+    // frameworks and form libraries that don't set autocomplete properly.
+    if (/\b(card|cvc|cvv|cardnumber|card_number|securitycode|otp|pin|passcode|password)\b/i.test(name + ' ' + id)) return true;
+    return false;
+  };
+
+  A.humanizeName = function (name) {
+    return name
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/[_\-.]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^\w/, c => c.toUpperCase());
+  };
+
+  A.extractLabel = function (field) {
+    if (field.id) {
+      const lbl = document.querySelector(`label[for="${CSS.escape(field.id)}"]`);
+      if (lbl) return lbl.textContent.trim();
+    }
+    const ariaLabel = field.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel.trim();
+
+    const labelledBy = field.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const ids = labelledBy.trim().split(/\s+/);
+      const text = ids.map(id => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(' ');
+      if (text) return text;
+    }
+
+    const parentLabel = field.closest('label');
+    if (parentLabel) {
+      const clone = parentLabel.cloneNode(true);
+      clone.querySelectorAll('input, textarea, select').forEach(e => e.remove());
+      const t = clone.textContent.trim();
+      if (t) return t;
+    }
+
+    // data-placeholder used by some rich-text editors (e.g. Notion, Slack)
+    const dataPlaceholder = field.getAttribute('data-placeholder') || field.getAttribute('placeholder');
+    if (dataPlaceholder) return dataPlaceholder.trim();
+
+    if (field.name) return A.humanizeName(field.name);
+
+    // Look for nearby heading / label text above the field
+    const prev = field.previousElementSibling;
+    if (prev && /^(label|span|p|div|h\d)$/i.test(prev.tagName)) {
+      const t = prev.textContent.trim();
+      if (t && t.length < 80) return t;
+    }
+
+    return 'this field';
+  };
+
+  A.extractConstraints = function (field) {
+    const c = {};
+    // Standard maxlength/minlength (works on input, textarea)
+    if (field.maxLength > 0) c.maxChars = field.maxLength;
+    else {
+      const max = parseInt(field.getAttribute('maxlength') || field.getAttribute('data-maxlength'), 10);
+      if (max > 0) c.maxChars = max;
+    }
+    if (field.minLength > 0) c.minChars = field.minLength;
+    return c;
+  };
+
+  // Dispatch a cancelable beforeinput event. Modern editors (Lexical,
+  // ProseMirror v2, Slate) subscribe to this and apply edits via their own
+  // models, calling preventDefault() to signal they took ownership. The browser
+  // itself never treats synthetic InputEvents as trusted, so if nothing cancels
+  // it, the caller must fall back to another insertion path.
+  // Returns true if the editor consumed it.
+  function dispatchBeforeInput(field, text) {
+    let dt = null;
+    try {
+      dt = new DataTransfer();
+      dt.setData('text/plain', text);
+    } catch { /* DataTransfer constructor unavailable in some sandboxes */ }
+    const ev = new InputEvent('beforeinput', {
+      inputType: 'insertReplacementText',
+      data: text,
+      dataTransfer: dt,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+    return !field.dispatchEvent(ev);
+  }
+
+  A.insertIntoField = function (field, text) {
+    if (A.isContentEditable(field)) {
+      setTimeout(() => {
+        field.focus();
+        // Select existing contents so the insert replaces them across every path.
+        const sel = window.getSelection();
+        const preRange = document.createRange();
+        preRange.selectNodeContents(field);
+        sel.removeAllRanges();
+        sel.addRange(preRange);
+
+        // 1. beforeinput — future-proof replacement for execCommand. Lexical,
+        // modern ProseMirror, Slate, and other editors listen for InputEvents
+        // with inputType 'insertReplacementText' and will apply the change
+        // themselves, then call preventDefault() to signal they handled it.
+        if (dispatchBeforeInput(field, text)) return;
+
+        // 2. execCommand — Draft.js, Quill, older TinyMCE, Gmail compose.
+        let ok = false;
+        const hasNewlines = text.includes('\n');
+        if (!hasNewlines) {
+          // Single-line: selectAll + insertText replaces selection in one shot.
+          // Skipping the intermediate delete keeps the editor's internal model in sync
+          // (React/custom editors like Twitter update state via beforeinput on insertText,
+          // but may ignore the delete step and retain the original text when serializing).
+          document.execCommand('selectAll', false, null);
+          ok = document.execCommand('insertText', false, text);
+        } else {
+          // Multi-line: delete first then insert line-by-line — inserting full text with \n
+          // in one execCommand loses newlines in rich-text editors like Gmail.
+          const cleared = document.execCommand('selectAll', false, null) &&
+                          document.execCommand('delete', false, null);
+          ok = cleared;
+          if (cleared) {
+            const lines = text.split('\n');
+            lines.forEach((line, i) => {
+              if (i > 0) document.execCommand('insertParagraph', false, null);
+              if (line) ok = document.execCommand('insertText', false, line) && ok;
+            });
+          }
+        }
+        if (!ok) {
+          // 3. Bare contenteditable with no framework.
+          try {
+            const range = document.createRange();
+            range.selectNodeContents(field);
+            range.deleteContents();
+            const node = document.createTextNode(text);
+            range.insertNode(node);
+            const endRange = document.createRange();
+            endRange.setStartAfter(node);
+            endRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(endRange);
+            field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+          } catch (e) {
+            field.textContent = text;
+            field.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          }
+        }
+      }, 50);
+    } else {
+      const proto = field instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(field, text);
+      else field.value = text;
+      field.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+    }
+  };
+
+  A.hideBtnTimer = null;
+
+  A.onFocus = function (e) {
+    if (A.dropdown.contains(e.target) || e.target === A.btn) return; // ignore our own UI
+    clearTimeout(A.hideBtnTimer); // cancel any pending hide from a prior blur
+    A.activeField = e.target;
+    A.positionBtn(A.activeField);
+  };
+
+  A.onBlur = function () {
+    A.hideBtnTimer = setTimeout(() => {
+      if (document.activeElement !== A.btn && !A.dropdown.contains(document.activeElement)) {
+        A.hideBtn();
+      }
+    }, 200);
+  };
+
+  A.attach = function (field) {
+    if (A.attachedFields.has(field)) return;
+    if (A.dropdown.contains(field) || field === A.btn) return; // never instrument our own UI
+    if ((field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') &&
+        (field.readOnly || field.disabled)) return;
+    if (A.isSensitiveField(field)) return;
+    // For contenteditable: attach only to the innermost editable node —
+    // the one with no contenteditable children. Outer wrappers (Draft.js root,
+    // Quill container, etc.) delegate editing to an inner node; targeting them
+    // causes Range ops to corrupt the editor's internal DOM structure.
+    if (A.isContentEditable(field)) {
+      let innerEditable = false;
+      A.walkRoots(field, r => {
+        if (innerEditable) return;
+        if (r === field) return;
+        if (r.querySelector?.('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]')) innerEditable = true;
+      });
+      if (innerEditable) return;
+    }
+
+    A.attachedFields.add(field);
+    field.addEventListener('focus', A.onFocus);
+    field.addEventListener('blur', A.onBlur);
+  };
+})();
