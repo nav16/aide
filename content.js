@@ -583,8 +583,15 @@
 
   // ---- Field instrumentation ----
 
+  // WeakSet instead of a DOM dataset flag: React/Vue/etc. can re-render from
+  // state and strip custom dataset attrs, which would make us re-attach
+  // listeners on every re-render. A WeakSet keyed by the element survives
+  // re-renders without mutating the DOM, and the entry GCs when the node
+  // itself is collected.
+  const attachedFields = new WeakSet();
+
   function attach(field) {
-    if (field.dataset.aifAttached) return;
+    if (attachedFields.has(field)) return;
     if (dropdown.contains(field) || field === btn) return; // never instrument our own UI
     if ((field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') &&
         (field.readOnly || field.disabled)) return;
@@ -603,7 +610,7 @@
       if (innerEditable) return;
     }
 
-    field.dataset.aifAttached = '1';
+    attachedFields.add(field);
     field.addEventListener('focus', onFocus);
     field.addEventListener('blur', onBlur);
   }
@@ -632,13 +639,34 @@
     });
   }
 
+  // Coalesce mutations into a small Set so that very chatty pages (Gmail,
+  // Twitter, Notion) don't make us walk every addedNode subtree synchronously.
+  // We wait for idle (or a 50ms deadline) and process unique nodes once.
+  const pendingNodes = new Set();
+  let flushHandle = null;
+  const schedule = typeof requestIdleCallback === 'function'
+    ? cb => requestIdleCallback(cb, { timeout: 200 })
+    : cb => setTimeout(cb, 50);
+
+  function flushPending() {
+    flushHandle = null;
+    if (pendingNodes.size === 0) return;
+    const nodes = Array.from(pendingNodes);
+    pendingNodes.clear();
+    for (const node of nodes) {
+      if (!node.isConnected) continue;
+      scanAndObserve(node);
+    }
+  }
+
   function onMutations(muts) {
     for (const m of muts) {
       for (const node of m.addedNodes) {
         if (node.nodeType !== 1) continue;
-        scanAndObserve(node);
+        pendingNodes.add(node);
       }
     }
+    if (flushHandle === null) flushHandle = schedule(flushPending);
   }
 
   scanAndObserve(document.body);
