@@ -302,13 +302,47 @@
     }
   });
 
+  // Dispatch a cancelable beforeinput event. Modern editors (Lexical,
+  // ProseMirror v2, Slate) subscribe to this and apply edits via their own
+  // models, calling preventDefault() to signal they took ownership. The browser
+  // itself never treats synthetic InputEvents as trusted, so if nothing cancels
+  // it, the caller must fall back to another insertion path.
+  // Returns true if the editor consumed it.
+  function dispatchBeforeInput(field, text) {
+    let dt = null;
+    try {
+      dt = new DataTransfer();
+      dt.setData('text/plain', text);
+    } catch { /* DataTransfer constructor unavailable in some sandboxes */ }
+    const ev = new InputEvent('beforeinput', {
+      inputType: 'insertReplacementText',
+      data: text,
+      dataTransfer: dt,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+    return !field.dispatchEvent(ev);
+  }
+
   function insertIntoField(field, text) {
     if (isContentEditable(field)) {
       setTimeout(() => {
         field.focus();
-        // execCommand is what Draft.js/Slate/Quill/ProseMirror all expect —
-        // they intercept browser editing events, not DOM mutations.
-        // Must run after focus() is settled, which is why this is inside setTimeout.
+        // Select existing contents so the insert replaces them across every path.
+        const sel = window.getSelection();
+        const preRange = document.createRange();
+        preRange.selectNodeContents(field);
+        sel.removeAllRanges();
+        sel.addRange(preRange);
+
+        // 1. beforeinput — future-proof replacement for execCommand. Lexical,
+        // modern ProseMirror, Slate, and other editors listen for InputEvents
+        // with inputType 'insertReplacementText' and will apply the change
+        // themselves, then call preventDefault() to signal they handled it.
+        if (dispatchBeforeInput(field, text)) return;
+
+        // 2. execCommand — Draft.js, Quill, older TinyMCE, Gmail compose.
         let ok = false;
         const hasNewlines = text.includes('\n');
         if (!hasNewlines) {
@@ -333,7 +367,7 @@
           }
         }
         if (!ok) {
-          // Fallback: bare contenteditable with no framework
+          // 3. Bare contenteditable with no framework.
           try {
             const range = document.createRange();
             range.selectNodeContents(field);
@@ -343,7 +377,6 @@
             const endRange = document.createRange();
             endRange.setStartAfter(node);
             endRange.collapse(true);
-            const sel = window.getSelection();
             sel.removeAllRanges();
             sel.addRange(endRange);
             field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
