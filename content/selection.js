@@ -127,6 +127,7 @@
     selPopup.dataset.selText = text;
     selPopup.dataset.originalText = text; // anchor for any follow-up turns
     selPopup.dataset.priorAnswer = '';
+    selPopup.dataset.turns = '[]'; // multi-turn transcript, accumulated across follow-ups
     copyBtn.classList.add('hidden');
     followupForm.classList.add('hidden');
     followupInput.value = '';
@@ -162,6 +163,9 @@
         copyBtn.dataset.copyText = response.text;
         copyBtn.classList.remove('hidden');
         selPopup.dataset.priorAnswer = response.text;
+        // Seed transcript with the initial explain/define answer so the model
+        // sees it as the first assistant turn when a follow-up arrives.
+        selPopup.dataset.turns = JSON.stringify([{ role: 'assistant', content: response.text }]);
         followupForm.classList.remove('hidden');
       }
       positionSelPopup(range);
@@ -197,6 +201,8 @@
   async function sendFollowup(question) {
     const originalText = selPopup.dataset.originalText || '';
     const prior        = selPopup.dataset.priorAnswer  || '';
+    let turns = [];
+    try { turns = JSON.parse(selPopup.dataset.turns || '[]'); } catch {}
     if (!originalText) return;
 
     const settings = await A.getSettings();
@@ -223,7 +229,7 @@
       reqId: myReqId,
       kind: 'followup',
       text: question,
-      context: { originalText, prior },
+      context: { originalText, prior, turns },
       pageTitle: document.title,
       provider: settings.provider,
       apiKey,
@@ -244,6 +250,12 @@
         copyBtn.classList.remove('hidden');
         // Chain into prior answer so the next follow-up sees this turn too.
         selPopup.dataset.priorAnswer = response.text;
+        // Append this Q/A pair to the transcript. Cap at the last 12 turns
+        // (~6 exchanges) to keep prompt size bounded on long sessions.
+        turns.push({ role: 'user', content: question });
+        turns.push({ role: 'assistant', content: response.text });
+        if (turns.length > 12) turns = turns.slice(-12);
+        selPopup.dataset.turns = JSON.stringify(turns);
         followupInput.value = '';
         followupInput.focus();
       }

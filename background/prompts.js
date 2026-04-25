@@ -73,9 +73,14 @@ export function userMsg(ctx, userPrompt, pageTitle) {
 
 export function explainPrompts(kind, text, pageTitle, context) {
   if (kind === 'followup') {
+    const turns = Array.isArray(context?.turns) ? context.turns : [];
+    const transcript = turns.length
+      ? turns.map(t => `${t.role === 'user' ? 'Q' : 'A'}: ${t.content}`).join('\n')
+      // Backwards-compat: older callers only sent prior + originalText.
+      : `A: ${context?.prior || ''}`;
     return {
-      system: 'You are a helpful assistant continuing a conversation about selected text from a web page. Answer the follow-up concisely (2-4 sentences). No preamble.',
-      user: `Original text: "${context?.originalText || ''}"\nPrior answer: "${context?.prior || ''}"\nFollow-up: ${text}\nPage context: "${pageTitle}"`
+      system: 'You are a helpful assistant continuing a conversation about selected text from a web page. Answer the follow-up concisely (2-4 sentences). Use the full transcript for context, not just the most recent turn. No preamble.',
+      user: `Original text: "${context?.originalText || ''}"\nPage context: "${pageTitle}"\nTranscript so far:\n${transcript}\nQ: ${text}`
     };
   }
   return {
