@@ -105,10 +105,14 @@
     }
     const form = field.closest('form');
     if (form) {
-      const al = form.getAttribute('aria-label') || form.getAttribute('aria-labelledby');
-      if (form.getAttribute('aria-label')) return al.trim();
-      if (form.getAttribute('aria-labelledby')) {
-        const t = document.getElementById(al)?.textContent?.trim();
+      const ariaLabel = form.getAttribute('aria-label');
+      if (ariaLabel) return ariaLabel.trim();
+      const labelledBy = form.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        // aria-labelledby is a space-separated ID list; resolve each and join.
+        const t = labelledBy.trim().split(/\s+/)
+          .map(id => document.getElementById(id)?.textContent?.trim())
+          .filter(Boolean).join(' ');
         if (t) return t;
       }
       // Heading inside form
