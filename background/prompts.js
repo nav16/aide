@@ -49,6 +49,50 @@ export function stopForField(ctx) {
   return ['\n'];
 }
 
+// Models still occasionally leak preambles ("Sure,", "Here is...") or wrap
+// the value in quotes/backticks despite the system rules. Strip those before
+// inserting into the field. Only applied to form-fill, not explain/define.
+const PREAMBLE_RE = /^(?:sure[,!.\s]+|certainly[,!.\s]+|of course[,!.\s]+|here(?:'s| is| you go)[:,.\s-]+|okay[,!.\s]+|answer[:\s]+|response[:\s]+|output[:\s]+|value[:\s]+)/i;
+
+export function cleanFormOutput(raw, ctx) {
+  if (!raw) return raw;
+  let s = raw.trim();
+
+  // Strip up to two preamble layers ("Sure! Here is: ...").
+  for (let i = 0; i < 2; i++) {
+    const next = s.replace(PREAMBLE_RE, '').trim();
+    if (next === s) break;
+    s = next;
+  }
+
+  // Drop wrapping quotes/backticks if they wrap the entire output.
+  const wraps = [['"','"'], ["'","'"], ['`','`'], ['“','”'], ['‘','’']];
+  for (const [open, close] of wraps) {
+    if (s.length >= 2 && s.startsWith(open) && s.endsWith(close)) {
+      s = s.slice(open.length, -close.length).trim();
+      break;
+    }
+  }
+
+  // Fenced code block wrap: ```lang\n...\n``` → keep inner only.
+  const fence = s.match(/^```[\w-]*\n?([\s\S]*?)\n?```$/);
+  if (fence) s = fence[1].trim();
+
+  // For single-line fields, collapse any stray newlines defensively (the stop
+  // sequence usually catches this, but local models sometimes ignore it).
+  const t = ctx?.inputType || 'text';
+  if (t !== 'textarea' && t !== 'contenteditable') {
+    s = s.split('\n')[0].trim();
+  }
+
+  // Clip to maxChars rather than hand the field a value the browser will
+  // silently truncate (which can break submit validation).
+  if (ctx?.maxChars && s.length > ctx.maxChars) {
+    s = s.slice(0, ctx.maxChars);
+  }
+  return s;
+}
+
 export function userMsg(ctx, userPrompt, pageTitle) {
   ctx = ctx || {};
   const lines = [];

@@ -1,5 +1,5 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForField, stopForField } from './prompts.js';
+import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForField, stopForField, cleanFormOutput } from './prompts.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
@@ -43,7 +43,7 @@ async function handleGenerate(req, signal) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
   const user = userMsg(req.fieldContext, req.prompt, req.pageTitle);
-  return callProvider({
+  const raw = await callProvider({
     provider: req.provider,
     apiKey:   req.apiKey,
     model:    req.model,
@@ -54,6 +54,7 @@ async function handleGenerate(req, signal) {
     temperature: TEMPERATURE.form,
     stop:        stopForField(req.fieldContext)
   }, signal);
+  return cleanFormOutput(raw, req.fieldContext);
 }
 
 async function handleExplain(req, signal) {
