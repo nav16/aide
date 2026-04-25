@@ -27,7 +27,11 @@ export const DEFINE_SCHEMA = {
     definition: { type: 'string', description: '1-2 sentence definition of the word.' },
     example:    { type: 'string', description: 'One short example sentence using the word.' }
   },
-  required: ['pos', 'definition', 'example']
+  required: ['pos', 'definition', 'example'],
+  // OpenAI strict json_schema requires additionalProperties:false. Gemini's
+  // sanitizer strips this key (its OpenAPI subset rejects it). Claude tool-use
+  // and Ollama format-as-schema accept it.
+  additionalProperties: false
 };
 
 // Pick a token cap matched to the field. Short typed inputs (email/url/tel)
@@ -52,9 +56,10 @@ export function tokensForField(ctx) {
 }
 
 // Temperature by call type. Form-fill wants determinism (valid formats,
-// fitting maxChars). Explain/define wants natural prose. Followup slightly
-// looser to avoid parroting prior answer verbatim.
-export const TEMPERATURE = { form: 0.3, explain: 0.5, followup: 0.6 };
+// fitting maxChars). Define is dictionary-precision — low temp keeps the
+// part-of-speech and sense stable across calls. Explain wants natural prose.
+// Followup slightly looser to avoid parroting prior answer verbatim.
+export const TEMPERATURE = { form: 0.3, word: 0.2, explain: 0.5, followup: 0.6 };
 
 // Stop tokens for fields that should never contain newlines. textarea and
 // contenteditable allow multi-line, so no stop there. Helps when the model
