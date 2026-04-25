@@ -91,6 +91,19 @@
     }
   });
 
+  // ---- Single document-capture focus dispatcher ----
+  // Replaces per-field focus/blur listeners. focusin/focusout are composed,
+  // so capture-phase listeners on document catch focus changes from inside
+  // open shadow roots too — composedPath()[0] gives the real target after
+  // retargeting at the shadow boundary.
+  function dispatchFocus(e, handler) {
+    const target = (e.composedPath && e.composedPath()[0]) || e.target;
+    if (!target || !A.attachedFields.has(target)) return;
+    handler({ target });
+  }
+  document.addEventListener('focusin',  e => dispatchFocus(e, A.onFocus), true);
+  document.addEventListener('focusout', e => dispatchFocus(e, A.onBlur),  true);
+
   // ---- Kick off ----
 
   scanAndObserve(document.body);

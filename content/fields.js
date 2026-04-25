@@ -311,7 +311,7 @@
     }
 
     A.attachedFields.add(field);
-    field.addEventListener('focus', A.onFocus);
-    field.addEventListener('blur', A.onBlur);
+    // No per-field focus/blur listeners — main.js installs a single
+    // document-capture pair that dispatches via attachedFields membership.
   };
 })();
