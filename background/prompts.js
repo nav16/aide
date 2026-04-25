@@ -12,7 +12,28 @@ export const SYSTEM = [
   '- For textarea/contenteditable, newlines are allowed; use them only when the content needs them.'
 ].join('\n');
 
-export const MAX_TOKENS = { form: 256, explain: 512 };
+export const MAX_TOKENS = { explain: 512 };
+
+// Pick a token cap matched to the field. Short typed inputs (email/url/tel)
+// rarely need more than ~16 tokens; long-form fields want headroom. When
+// maxChars is known, cap by ~chars/3 (rough chars-per-token) plus slack.
+export function tokensForField(ctx) {
+  const t = ctx?.inputType || 'text';
+  const longForm = t === 'textarea' || t === 'contenteditable';
+  let cap;
+  if (t === 'number')                                      cap = 16;
+  else if (t === 'email' || t === 'url' || t === 'tel')    cap = 32;
+  else if (t === 'date'  || t === 'time' || t === 'month' ||
+           t === 'week'  || t === 'datetime-local')        cap = 16;
+  else if (longForm)                                       cap = 1024;
+  else                                                     cap = 96;
+
+  if (ctx?.maxChars) {
+    const fromChars = Math.ceil(ctx.maxChars / 3) + 8;
+    cap = Math.min(cap, fromChars);
+  }
+  return Math.max(cap, 8);
+}
 
 // Temperature by call type. Form-fill wants determinism (valid formats,
 // fitting maxChars). Explain/define wants natural prose. Followup slightly

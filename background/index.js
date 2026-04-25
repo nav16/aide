@@ -1,5 +1,5 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts } from './prompts.js';
+import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForField } from './prompts.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
@@ -50,7 +50,7 @@ async function handleGenerate(req, signal) {
     baseUrl:  req.ollamaBaseUrl,
     user,
     system:      SYSTEM,
-    maxTokens:   MAX_TOKENS.form,
+    maxTokens:   tokensForField(req.fieldContext),
     temperature: TEMPERATURE.form
   }, signal);
 }
