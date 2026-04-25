@@ -77,11 +77,10 @@
   };
 
   A.openDropdown = function (field) {
-    const label = A.extractLabel(field);
-    const constraints = A.extractConstraints(field);
-    const labelText = constraints.maxChars
-      ? `Field: ${label} · ${constraints.maxChars} chars max`
-      : `Field: ${label}`;
+    const ctx = A.extractFieldContext(field);
+    const labelText = ctx.maxChars
+      ? `Field: ${ctx.label} · ${ctx.maxChars} chars max`
+      : `Field: ${ctx.label}`;
     dropdown.querySelector('.aif-label-text').textContent = labelText;
     dropdown.querySelector('.aif-result').textContent = '';
     dropdown.querySelector('.aif-result').className = 'aif-result';
@@ -174,8 +173,7 @@
       apiKey,
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl,
-      label: A.extractLabel(A.activeField),
-      constraints: A.extractConstraints(A.activeField),
+      fieldContext: A.extractFieldContext(A.activeField),
       prompt: A.lastPrompt,
       pageTitle: document.title
     };

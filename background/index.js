@@ -42,7 +42,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleGenerate(req, signal) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
-  const user = userMsg(req.label, req.prompt, req.pageTitle, req.constraints);
+  const user = userMsg(req.fieldContext, req.prompt, req.pageTitle);
   return callProvider({
     provider: req.provider,
     apiKey:   req.apiKey,

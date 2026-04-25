@@ -62,13 +62,9 @@
       if (t) return t;
     }
 
-    // data-placeholder used by some rich-text editors (e.g. Notion, Slack)
-    const dataPlaceholder = field.getAttribute('data-placeholder') || field.getAttribute('placeholder');
-    if (dataPlaceholder) return dataPlaceholder.trim();
-
     if (field.name) return A.humanizeName(field.name);
 
-    // Look for nearby heading / label text above the field
+    // Nearby heading / label text above the field
     const prev = field.previousElementSibling;
     if (prev && /^(label|span|p|div|h\d)$/i.test(prev.tagName)) {
       const t = prev.textContent.trim();
@@ -78,16 +74,89 @@
     return 'this field';
   };
 
-  A.extractConstraints = function (field) {
-    const c = {};
-    // Standard maxlength/minlength (works on input, textarea)
-    if (field.maxLength > 0) c.maxChars = field.maxLength;
+  function extractPlaceholder(field) {
+    // data-placeholder used by rich-text editors (Notion, Slack)
+    const p = field.getAttribute('placeholder') || field.getAttribute('data-placeholder');
+    return p ? p.trim() : '';
+  }
+
+  function extractFieldType(field) {
+    if (field.tagName === 'TEXTAREA') return 'textarea';
+    if (A.isContentEditable(field)) return 'contenteditable';
+    return (field.getAttribute('type') || 'text').toLowerCase();
+  }
+
+  function extractDescribedBy(field) {
+    const ids = field.getAttribute('aria-describedby');
+    if (!ids) return '';
+    const text = ids.trim().split(/\s+/)
+      .map(id => document.getElementById(id)?.textContent?.trim())
+      .filter(Boolean).join(' ');
+    return text.length > 240 ? text.slice(0, 240) + '…' : text;
+  }
+
+  function extractFormContext(field) {
+    const fieldset = field.closest('fieldset');
+    if (fieldset) {
+      const legend = fieldset.querySelector(':scope > legend');
+      if (legend?.textContent.trim()) return legend.textContent.trim();
+      const al = fieldset.getAttribute('aria-label');
+      if (al) return al.trim();
+    }
+    const form = field.closest('form');
+    if (form) {
+      const al = form.getAttribute('aria-label') || form.getAttribute('aria-labelledby');
+      if (form.getAttribute('aria-label')) return al.trim();
+      if (form.getAttribute('aria-labelledby')) {
+        const t = document.getElementById(al)?.textContent?.trim();
+        if (t) return t;
+      }
+      // Heading inside form
+      const h = form.querySelector('h1, h2, h3, h4, legend');
+      if (h?.textContent.trim()) return h.textContent.trim().slice(0, 120);
+    }
+    return '';
+  }
+
+  A.extractFieldContext = function (field) {
+    const ctx = { label: A.extractLabel(field) };
+    const placeholder = extractPlaceholder(field);
+    if (placeholder && placeholder !== ctx.label) ctx.placeholder = placeholder;
+
+    ctx.inputType = extractFieldType(field);
+
+    const ac = field.getAttribute('autocomplete');
+    if (ac && ac !== 'off' && ac !== 'on') ctx.autocomplete = ac.trim();
+
+    const pattern = field.getAttribute('pattern');
+    if (pattern) ctx.pattern = pattern;
+
+    if (field.required || field.getAttribute('aria-required') === 'true') ctx.required = true;
+
+    if (field.maxLength > 0) ctx.maxChars = field.maxLength;
     else {
       const max = parseInt(field.getAttribute('maxlength') || field.getAttribute('data-maxlength'), 10);
-      if (max > 0) c.maxChars = max;
+      if (max > 0) ctx.maxChars = max;
     }
-    if (field.minLength > 0) c.minChars = field.minLength;
-    return c;
+    if (field.minLength > 0) ctx.minChars = field.minLength;
+
+    if (ctx.inputType === 'number') {
+      const mn = field.getAttribute('min');
+      const mx = field.getAttribute('max');
+      const st = field.getAttribute('step');
+      if (mn != null) ctx.min = mn;
+      if (mx != null) ctx.max = mx;
+      if (st != null) ctx.step = st;
+    }
+
+    const help = extractDescribedBy(field);
+    if (help) ctx.describedBy = help;
+
+    const form = extractFormContext(field);
+    if (form && form !== ctx.label) ctx.formContext = form;
+
+    ctx.hostname = location.hostname;
+    return ctx;
   };
 
   // Dispatch a cancelable beforeinput event. Modern editors (Lexical,
