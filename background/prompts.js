@@ -67,6 +67,12 @@ export function userMsg(ctx, userPrompt, pageTitle) {
   if (ctx.min != null)  lines.push(`Min value: ${ctx.min}`);
   if (ctx.max != null)  lines.push(`Max value: ${ctx.max}`);
   if (ctx.step != null) lines.push(`Step: ${ctx.step}`);
+  if (ctx.currentValue) {
+    // Show the draft on its own block so the model treats it as material to
+    // continue/refine, not as part of the instruction.
+    lines.push('Current draft (continue or refine; do not duplicate):');
+    lines.push(ctx.currentValue);
+  }
   lines.push(userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.');
   return lines.join('\n');
 }

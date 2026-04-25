@@ -125,6 +125,16 @@
 
     ctx.inputType = extractFieldType(field);
 
+    // Current draft, if any. Lets the model continue/refine instead of
+    // discarding what the user already typed. Cap at 2k chars so we don't
+    // dump entire essays into the prompt.
+    const currentValue = ctx.inputType === 'contenteditable'
+      ? (field.innerText || field.textContent || '').trim()
+      : (field.value || '').trim();
+    if (currentValue) {
+      ctx.currentValue = currentValue.length > 2000 ? currentValue.slice(0, 2000) + '…' : currentValue;
+    }
+
     const ac = field.getAttribute('autocomplete');
     if (ac && ac !== 'off' && ac !== 'on') ctx.autocomplete = ac.trim();
 
