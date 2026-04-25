@@ -349,3 +349,29 @@
 .aif-sel-body.aif-sel-error {
   color: #ff7070;
 }
+
+.aif-def-pos {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226,255,90,0.85);
+  border: 1px solid rgba(226,255,90,0.35);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-bottom: 6px;
+}
+.aif-def-body {
+  color: #e3e3e3;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.aif-def-ex {
+  color: rgba(255,255,255,0.55);
+  font-size: 11.5px;
+  line-height: 1.45;
+  font-style: italic;
+  border-left: 2px solid rgba(226,255,90,0.4);
+  padding-left: 8px;
+}

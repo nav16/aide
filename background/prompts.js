@@ -133,12 +133,23 @@ export function explainPrompts(kind, text, pageTitle, context) {
       user: `Original text: "${context?.originalText || ''}"\nPage context: "${pageTitle}"\nTranscript so far:\n${transcript}\nQ: ${text}`
     };
   }
+  if (kind === 'word') {
+    return {
+      system: [
+        'You are a concise dictionary.',
+        'Output ONLY a single JSON object with EXACTLY these three keys:',
+        '{"pos": "<part of speech, e.g. noun / verb / adjective>", "definition": "<1-2 sentence definition>", "example": "<one short example sentence using the word>"}',
+        'Hard rules:',
+        '- No preamble, no commentary, no trailing text.',
+        '- No markdown, no code fences, no backticks.',
+        '- Output must parse as JSON. Use double quotes. Escape internal quotes.',
+        '- If the input has multiple senses, pick the most common one.'
+      ].join('\n'),
+      user: `Word: "${text}"\nPage context: "${pageTitle}"`
+    };
+  }
   return {
-    system: kind === 'word'
-      ? 'You are a concise dictionary. Given a word, respond with: part of speech, definition (1-2 sentences), and a short example sentence. No preamble.'
-      : 'You are a helpful explainer. Given selected text, explain it clearly in 2-3 sentences for a general audience. No preamble.',
-    user: kind === 'word'
-      ? `Word: "${text}"\nPage context: "${pageTitle}"`
-      : `Text: "${text}"\nPage context: "${pageTitle}"`
+    system: 'You are a helpful explainer. Given selected text, explain it clearly in 2-3 sentences for a general audience. No preamble.',
+    user: `Text: "${text}"\nPage context: "${pageTitle}"`
   };
 }
