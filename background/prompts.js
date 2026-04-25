@@ -149,7 +149,17 @@ export function explainPrompts(kind, text, pageTitle, context, hostname) {
       // Backwards-compat: older callers only sent prior + originalText.
       : `A: ${context?.prior || ''}`;
     return {
-      system: 'You are a helpful assistant continuing a conversation about selected text from a web page. Answer the follow-up concisely (2-4 sentences). Use the full transcript for context, not just the most recent turn. Reply in the same language as the latest user question (or the original text when ambiguous). No preamble.',
+      system: [
+        'You are a helpful assistant continuing a conversation about selected text from a web page.',
+        'Match answer length to question complexity:',
+        '- Yes/no or single-fact questions: one sentence.',
+        '- Brief clarifications: 1-2 sentences.',
+        '- Conceptual or "explain why/how" questions: up to 4 sentences.',
+        '- Never pad to fill space.',
+        'Use the full transcript for context, not just the most recent turn.',
+        'Reply in the same language as the latest user question (or the original text when ambiguous).',
+        'No preamble.'
+      ].join('\n'),
       user: `Original text: "${context?.originalText || ''}"\n${pageLine}\nTranscript so far:\n${transcript}\nQ: ${text}`
     };
   }
