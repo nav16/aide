@@ -13,9 +13,9 @@ export const SYSTEM = [
 ].join('\n');
 
 // Max tokens by call kind. Define output is a small JSON object (~80 tokens
-// in practice) so a tight cap saves cost. Explain wants a 2-3 sentence prose
-// budget; followup is mid-length conversational.
-export const MAX_TOKENS = { word: 128, explain: 512, followup: 384 };
+// in practice). Cap kept loose enough that any rogue preamble Gemini emits
+// before the JSON does not truncate the JSON itself.
+export const MAX_TOKENS = { word: 256, explain: 512, followup: 384 };
 
 // Schema for define output. Used by providers that support native structured
 // outputs to lock the response shape — kills cross-model variance and removes
@@ -170,7 +170,8 @@ export function explainPrompts(kind, text, pageTitle, context, hostname) {
         'Output ONLY a single JSON object with EXACTLY these three keys:',
         '{"pos": "<part of speech, e.g. noun / verb / adjective>", "definition": "<1-2 sentence definition>", "example": "<one short example sentence using the word>"}',
         'Hard rules:',
-        '- No preamble, no commentary, no trailing text.',
+        '- The VERY FIRST character of your response MUST be `{`. Do not write "Here", "Here is", "Sure", or any other text before it.',
+        '- The VERY LAST character of your response MUST be `}`. No trailing commentary.',
         '- No markdown, no code fences, no backticks.',
         '- Output must parse as JSON. Use double quotes. Escape internal quotes.',
         '- If the input has multiple senses, pick the one that fits the page context best, otherwise the most common one.',
