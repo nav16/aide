@@ -29,7 +29,6 @@
       "js": [
         "content/bootstrap.js",
         "content/constants.js",
-        "content/shadow.js",
         "content/messaging.js",
         "content/fields.js",
         "content/ui.js",

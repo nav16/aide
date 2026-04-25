@@ -3,68 +3,40 @@
   if (window.__aide?.skip) return;
   const A = (window.__aide ||= {});
 
-  // ---- Field scan + shadow-root observation ----
-
-  // Single TreeWalker pass per scan: visits each element exactly once and
-  // checks both for a field match and for a shadow root in the same step.
-  // The previous version traversed the subtree twice — once via walkRoots'
-  // querySelectorAll('*') to find shadow roots, then again per root via
-  // querySelectorAll(FIELD_SELECTOR) — which doubled the cost on every
-  // mutation flush.
-  function observeShadow(root) {
-    if (!(root instanceof ShadowRoot) || A.observedShadowRoots.has(root)) return;
-    A.observedShadowRoots.add(root);
-    new MutationObserver(onMutations).observe(root, { childList: true, subtree: true });
+  // ---- Lazy attach via focus dispatch ----
+  // Earlier versions walked the entire DOM at startup and again on every
+  // MutationObserver flush, just to populate attachedFields. On dense SPAs
+  // (Notion, Salesforce, Gmail) most fields are never touched, so the scan
+  // was pure cost. We now attach lazily: when a focus event arrives for a
+  // matching field, gate it through attach() then run onFocus.
+  //
+  // focusin/focusout are composed events, so capture-phase listeners on
+  // document catch focus from inside open shadow roots too. composedPath()[0]
+  // gives the real target after retargeting at the shadow boundary. Closed
+  // shadow roots don't expose inner targets — those fields are skipped, which
+  // matches our prior behavior (closed roots blocked Range ops anyway).
+  function realTarget(e) {
+    return (e.composedPath && e.composedPath()[0]) || e.target;
   }
 
-  function scanAndObserve(node) {
-    if (node.nodeType !== 1 && node.nodeType !== 9 && node.nodeType !== 11) return;
-    if (node.nodeType === 1 && node.matches?.(A.FIELD_SELECTOR)) A.attach(node);
-    if (node.shadowRoot) {
-      observeShadow(node.shadowRoot);
-      scanAndObserve(node.shadowRoot);
+  document.addEventListener('focusin', (e) => {
+    const target = realTarget(e);
+    if (!target || target.nodeType !== 1) return;
+    if (!A.attachedFields.has(target)) {
+      // Match the same selector the old scan used; attach() does the rest of
+      // the gating (sensitive fields, readonly, inner-editable).
+      if (!target.matches?.(A.FIELD_SELECTOR)) return;
+      A.attach(target);
+      if (!A.attachedFields.has(target)) return; // attach rejected it
     }
-    if (!node.firstChild) return;
-    const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
-    let el;
-    while ((el = walker.nextNode())) {
-      if (el.matches?.(A.FIELD_SELECTOR)) A.attach(el);
-      if (el.shadowRoot) {
-        observeShadow(el.shadowRoot);
-        scanAndObserve(el.shadowRoot);
-      }
-    }
-  }
+    A.onFocus({ target });
+  }, true);
 
-  // Coalesce mutations into a small Set so that very chatty pages (Gmail,
-  // Twitter, Notion) don't make us walk every addedNode subtree synchronously.
-  // We wait for idle (or a 50ms deadline) and process unique nodes once.
-  const pendingNodes = new Set();
-  let flushHandle = null;
-  const schedule = typeof requestIdleCallback === 'function'
-    ? cb => requestIdleCallback(cb, { timeout: 200 })
-    : cb => setTimeout(cb, 50);
-
-  function flushPending() {
-    flushHandle = null;
-    if (pendingNodes.size === 0) return;
-    const nodes = Array.from(pendingNodes);
-    pendingNodes.clear();
-    for (const node of nodes) {
-      if (!node.isConnected) continue;
-      scanAndObserve(node);
-    }
-  }
-
-  function onMutations(muts) {
-    for (const m of muts) {
-      for (const node of m.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        pendingNodes.add(node);
-      }
-    }
-    if (flushHandle === null) flushHandle = schedule(flushPending);
-  }
+  document.addEventListener('focusout', (e) => {
+    const target = realTarget(e);
+    if (!target || !A.attachedFields.has(target)) return;
+    A.onBlur({ target });
+  }, true);
 
   // ---- Global UI dismissals ----
 
@@ -91,21 +63,12 @@
     }
   });
 
-  // ---- Single document-capture focus dispatcher ----
-  // Replaces per-field focus/blur listeners. focusin/focusout are composed,
-  // so capture-phase listeners on document catch focus changes from inside
-  // open shadow roots too — composedPath()[0] gives the real target after
-  // retargeting at the shadow boundary.
-  function dispatchFocus(e, handler) {
-    const target = (e.composedPath && e.composedPath()[0]) || e.target;
-    if (!target || !A.attachedFields.has(target)) return;
-    handler({ target });
+  // ---- Startup ----
+  // Page may have already auto-focused a field before our content script ran
+  // (document_idle fires after autofocus). Surface the button for it.
+  const active = document.activeElement;
+  if (active && active !== document.body && active.matches?.(A.FIELD_SELECTOR)) {
+    A.attach(active);
+    if (A.attachedFields.has(active)) A.onFocus({ target: active });
   }
-  document.addEventListener('focusin',  e => dispatchFocus(e, A.onFocus), true);
-  document.addEventListener('focusout', e => dispatchFocus(e, A.onBlur),  true);
-
-  // ---- Kick off ----
-
-  scanAndObserve(document.body);
-  new MutationObserver(onMutations).observe(document.body, { childList: true, subtree: true });
 })();
