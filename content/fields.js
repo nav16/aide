@@ -198,7 +198,11 @@
 
   A.insertIntoField = function (field, text) {
     if (A.isContentEditable(field)) {
-      setTimeout(() => {
+      // Defer to next frame so the dropdown's hide() and our previous focus
+      // changes settle before we re-focus and operate on the selection range.
+      // 50ms setTimeout was visibly laggy on fast machines; rAF is one frame
+      // (~16ms) and runs after layout, which is what we actually need.
+      requestAnimationFrame(() => {
         field.focus();
         // Select existing contents so the insert replaces them across every path.
         const sel = window.getSelection();
