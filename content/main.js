@@ -5,15 +5,35 @@
 
   // ---- Field scan + shadow-root observation ----
 
+  // Single TreeWalker pass per scan: visits each element exactly once and
+  // checks both for a field match and for a shadow root in the same step.
+  // The previous version traversed the subtree twice — once via walkRoots'
+  // querySelectorAll('*') to find shadow roots, then again per root via
+  // querySelectorAll(FIELD_SELECTOR) — which doubled the cost on every
+  // mutation flush.
+  function observeShadow(root) {
+    if (!(root instanceof ShadowRoot) || A.observedShadowRoots.has(root)) return;
+    A.observedShadowRoots.add(root);
+    new MutationObserver(onMutations).observe(root, { childList: true, subtree: true });
+  }
+
   function scanAndObserve(node) {
+    if (node.nodeType !== 1 && node.nodeType !== 9 && node.nodeType !== 11) return;
     if (node.nodeType === 1 && node.matches?.(A.FIELD_SELECTOR)) A.attach(node);
-    A.walkRoots(node, r => {
-      r.querySelectorAll?.(A.FIELD_SELECTOR).forEach(A.attach);
-      if (r instanceof ShadowRoot && !A.observedShadowRoots.has(r)) {
-        A.observedShadowRoots.add(r);
-        new MutationObserver(onMutations).observe(r, { childList: true, subtree: true });
+    if (node.shadowRoot) {
+      observeShadow(node.shadowRoot);
+      scanAndObserve(node.shadowRoot);
+    }
+    if (!node.firstChild) return;
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+    let el;
+    while ((el = walker.nextNode())) {
+      if (el.matches?.(A.FIELD_SELECTOR)) A.attach(el);
+      if (el.shadowRoot) {
+        observeShadow(el.shadowRoot);
+        scanAndObserve(el.shadowRoot);
       }
-    });
+    }
   }
 
   // Coalesce mutations into a small Set so that very chatty pages (Gmail,
