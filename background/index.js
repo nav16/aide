@@ -58,7 +58,7 @@ async function handleGenerate(req, signal) {
 async function handleExplain(req, signal) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
-  const { system, user } = explainPrompts(req.kind, req.text, req.pageTitle, req.context);
+  const { system, user } = explainPrompts(req.kind, req.text, req.pageTitle, req.context, req.hostname);
   return callProvider({
     provider: req.provider,
     apiKey:   req.apiKey,

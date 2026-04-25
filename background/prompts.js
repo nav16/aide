@@ -137,7 +137,11 @@ export function userMsg(ctx, userPrompt, pageTitle) {
   return lines.join('\n');
 }
 
-export function explainPrompts(kind, text, pageTitle, context) {
+export function explainPrompts(kind, text, pageTitle, context, hostname) {
+  const pageLine = hostname
+    ? `Page context: "${pageTitle}" (${hostname})`
+    : `Page context: "${pageTitle}"`;
+
   if (kind === 'followup') {
     const turns = Array.isArray(context?.turns) ? context.turns : [];
     const transcript = turns.length
@@ -146,7 +150,7 @@ export function explainPrompts(kind, text, pageTitle, context) {
       : `A: ${context?.prior || ''}`;
     return {
       system: 'You are a helpful assistant continuing a conversation about selected text from a web page. Answer the follow-up concisely (2-4 sentences). Use the full transcript for context, not just the most recent turn. Reply in the same language as the latest user question (or the original text when ambiguous). No preamble.',
-      user: `Original text: "${context?.originalText || ''}"\nPage context: "${pageTitle}"\nTranscript so far:\n${transcript}\nQ: ${text}`
+      user: `Original text: "${context?.originalText || ''}"\n${pageLine}\nTranscript so far:\n${transcript}\nQ: ${text}`
     };
   }
   if (kind === 'word') {
@@ -159,14 +163,14 @@ export function explainPrompts(kind, text, pageTitle, context) {
         '- No preamble, no commentary, no trailing text.',
         '- No markdown, no code fences, no backticks.',
         '- Output must parse as JSON. Use double quotes. Escape internal quotes.',
-        '- If the input has multiple senses, pick the most common one.',
+        '- If the input has multiple senses, pick the one that fits the page context best, otherwise the most common one.',
         '- Write the definition and example in the same language as the input word.'
       ].join('\n'),
-      user: `Word: "${text}"\nPage context: "${pageTitle}"`
+      user: `Word: "${text}"\n${pageLine}`
     };
   }
   return {
-    system: 'You are a helpful explainer. Given selected text, explain it clearly in 2-3 sentences for a general audience. Reply in the same language as the selected text. No preamble.',
-    user: `Text: "${text}"\nPage context: "${pageTitle}"`
+    system: 'You are a helpful explainer. Given selected text, explain it clearly in 2-3 sentences for a general audience. Use the page context (domain + title) to disambiguate jargon (e.g. terms on github.com vs a recipe site). Reply in the same language as the selected text. No preamble.',
+    user: `Text: "${text}"\n${pageLine}`
   };
 }
