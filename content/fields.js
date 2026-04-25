@@ -299,14 +299,11 @@
     // the one with no contenteditable children. Outer wrappers (Draft.js root,
     // Quill container, etc.) delegate editing to an inner node; targeting them
     // causes Range ops to corrupt the editor's internal DOM structure.
+    // Plain querySelector is sufficient here — editors essentially never put
+    // their inner editable inside a shadow root, so the cost of walkRoots
+    // (full subtree walk per attach) isn't justified.
     if (A.isContentEditable(field)) {
-      let innerEditable = false;
-      A.walkRoots(field, r => {
-        if (innerEditable) return;
-        if (r === field) return;
-        if (r.querySelector?.('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]')) innerEditable = true;
-      });
-      if (innerEditable) return;
+      if (field.querySelector('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]')) return;
     }
 
     A.attachedFields.add(field);
