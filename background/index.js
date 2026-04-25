@@ -1,5 +1,5 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForField } from './prompts.js';
+import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForField, stopForField } from './prompts.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
@@ -51,7 +51,8 @@ async function handleGenerate(req, signal) {
     user,
     system:      SYSTEM,
     maxTokens:   tokensForField(req.fieldContext),
-    temperature: TEMPERATURE.form
+    temperature: TEMPERATURE.form,
+    stop:        stopForField(req.fieldContext)
   }, signal);
 }
 

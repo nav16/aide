@@ -1,10 +1,11 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function gemini({ apiKey, model, user, system, maxTokens, temperature, signal }) {
+export async function gemini({ apiKey, model, user, system, maxTokens, temperature, stop, signal }) {
   const generationConfig = {};
   if (maxTokens   != null) generationConfig.maxOutputTokens = maxTokens;
   if (temperature != null) generationConfig.temperature     = temperature;
+  if (stop?.length)        generationConfig.stopSequences   = stop;
   const res = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
     {

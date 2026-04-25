@@ -40,6 +40,15 @@ export function tokensForField(ctx) {
 // looser to avoid parroting prior answer verbatim.
 export const TEMPERATURE = { form: 0.3, explain: 0.5, followup: 0.6 };
 
+// Stop tokens for fields that should never contain newlines. textarea and
+// contenteditable allow multi-line, so no stop there. Helps when the model
+// adds a trailing explanation line after the value.
+export function stopForField(ctx) {
+  const t = ctx?.inputType || 'text';
+  if (t === 'textarea' || t === 'contenteditable') return null;
+  return ['\n'];
+}
+
 export function userMsg(ctx, userPrompt, pageTitle) {
   ctx = ctx || {};
   const lines = [];

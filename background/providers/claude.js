@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function claude({ apiKey, model, user, system, maxTokens, temperature, signal }) {
+export async function claude({ apiKey, model, user, system, maxTokens, temperature, stop, signal }) {
   const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal,
@@ -15,6 +15,7 @@ export async function claude({ apiKey, model, user, system, maxTokens, temperatu
       model: model || 'claude-sonnet-4-6',
       max_tokens: maxTokens,
       ...(temperature != null ? { temperature } : {}),
+      ...(stop?.length ? { stop_sequences: stop } : {}),
       system,
       messages: [{ role: 'user', content: user }]
     })

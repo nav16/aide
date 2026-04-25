@@ -1,6 +1,6 @@
 import { fetchWithRetry } from '../retry.js';
 
-export async function ollama({ baseUrl, model, user, system, temperature, signal }) {
+export async function ollama({ baseUrl, model, user, system, temperature, stop, signal }) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
   // /api/chat with system+user roles — /api/generate (completion) causes models to echo the prompt
   const res = await fetchWithRetry(`${base}/api/chat`, {
@@ -10,7 +10,9 @@ export async function ollama({ baseUrl, model, user, system, temperature, signal
     body: JSON.stringify({
       model,
       stream: false,
-      ...(temperature != null ? { options: { temperature } } : {}),
+      ...((temperature != null || stop?.length)
+        ? { options: { ...(temperature != null ? { temperature } : {}), ...(stop?.length ? { stop } : {}) } }
+        : {}),
       messages: [
         { role: 'system', content: system },
         { role: 'user',   content: user }

@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function openai({ apiKey, model, user, system, maxTokens, temperature, signal }) {
+export async function openai({ apiKey, model, user, system, maxTokens, temperature, stop, signal }) {
   const res = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     signal,
@@ -13,6 +13,7 @@ export async function openai({ apiKey, model, user, system, maxTokens, temperatu
       model: model || 'gpt-4o',
       max_tokens: maxTokens,
       ...(temperature != null ? { temperature } : {}),
+      ...(stop?.length ? { stop } : {}),
       messages: [
         { role: 'system', content: system },
         { role: 'user',   content: user }
