@@ -66,7 +66,7 @@ async function handleExplain(req, signal) {
     baseUrl:  req.ollamaBaseUrl,
     user,
     system,
-    maxTokens:   MAX_TOKENS.explain,
+    maxTokens:   MAX_TOKENS[req.kind] || MAX_TOKENS.explain,
     temperature: req.kind === 'followup' ? TEMPERATURE.followup : TEMPERATURE.explain,
     // Native structured-output mode for define. Each provider wires this to
     // its own JSON-mode mechanism (json_schema / responseSchema / tool-use /

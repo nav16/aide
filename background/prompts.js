@@ -12,7 +12,10 @@ export const SYSTEM = [
   '- For textarea/contenteditable, newlines are allowed; use them only when the content needs them.'
 ].join('\n');
 
-export const MAX_TOKENS = { explain: 512 };
+// Max tokens by call kind. Define output is a small JSON object (~80 tokens
+// in practice) so a tight cap saves cost. Explain wants a 2-3 sentence prose
+// budget; followup is mid-length conversational.
+export const MAX_TOKENS = { word: 128, explain: 512, followup: 384 };
 
 // Schema for define output. Used by providers that support native structured
 // outputs to lock the response shape — kills cross-model variance and removes
