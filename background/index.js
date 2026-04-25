@@ -1,5 +1,5 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForField, stopForField, cleanFormOutput } from './prompts.js';
+import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, userMsg, explainPrompts, tokensForField, stopForField, cleanFormOutput } from './prompts.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
@@ -67,6 +67,10 @@ async function handleExplain(req, signal) {
     user,
     system,
     maxTokens:   MAX_TOKENS.explain,
-    temperature: req.kind === 'followup' ? TEMPERATURE.followup : TEMPERATURE.explain
+    temperature: req.kind === 'followup' ? TEMPERATURE.followup : TEMPERATURE.explain,
+    // Native structured-output mode for define. Each provider wires this to
+    // its own JSON-mode mechanism (json_schema / responseSchema / tool-use /
+    // format:'json'). Returns a JSON string that the popup parses as before.
+    jsonSchema:  req.kind === 'word' ? { name: 'define', schema: DEFINE_SCHEMA } : null
   }, signal);
 }

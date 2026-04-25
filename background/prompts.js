@@ -14,6 +14,19 @@ export const SYSTEM = [
 
 export const MAX_TOKENS = { explain: 512 };
 
+// Schema for define output. Used by providers that support native structured
+// outputs to lock the response shape — kills cross-model variance and removes
+// JSON-parse failures on smaller models.
+export const DEFINE_SCHEMA = {
+  type: 'object',
+  properties: {
+    pos:        { type: 'string', description: 'Part of speech: noun, verb, adjective, etc.' },
+    definition: { type: 'string', description: '1-2 sentence definition of the word.' },
+    example:    { type: 'string', description: 'One short example sentence using the word.' }
+  },
+  required: ['pos', 'definition', 'example']
+};
+
 // Pick a token cap matched to the field. Short typed inputs (email/url/tel)
 // rarely need more than ~16 tokens; long-form fields want headroom. When
 // maxChars is known, cap by ~chars/3 (rough chars-per-token) plus slack.
