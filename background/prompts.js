@@ -14,6 +14,11 @@ export const SYSTEM = [
 
 export const MAX_TOKENS = { form: 256, explain: 512 };
 
+// Temperature by call type. Form-fill wants determinism (valid formats,
+// fitting maxChars). Explain/define wants natural prose. Followup slightly
+// looser to avoid parroting prior answer verbatim.
+export const TEMPERATURE = { form: 0.3, explain: 0.5, followup: 0.6 };
+
 export function userMsg(ctx, userPrompt, pageTitle) {
   ctx = ctx || {};
   const lines = [];
