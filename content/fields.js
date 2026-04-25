@@ -214,16 +214,71 @@
         // 1. beforeinput — future-proof replacement for execCommand. Lexical,
         // modern ProseMirror, Slate, and other editors listen for InputEvents
         // and apply the change through their own reducers, calling
-        // preventDefault() to signal they handled it. Try 'insertText' first
-        // (canonical typing path, what ChatGPT/Claude.ai/Gemini reduce) and
-        // fall back to 'insertReplacementText' for editors that only catch
-        // the spellcheck-style inputType.
-        if (dispatchBeforeInput(field, text, 'insertText')) return;
-        if (dispatchBeforeInput(field, text, 'insertReplacementText')) return;
+        // preventDefault() to signal they handled it.
+        //
+        // Multi-line text needs per-line dispatch: a single 'insertText'
+        // event with '\n' in `data` is treated by editors (Gmail compose,
+        // Lexical) as one chunk of typed characters, and `\n` isn't a valid
+        // typed char — so they collapse it. Splitting into insertText +
+        // insertParagraph chunks matches how a real keyboard would deliver
+        // the same input.
+        const hasNewlines = text.includes('\n');
+        if (!hasNewlines) {
+          if (dispatchBeforeInput(field, text, 'insertText')) return;
+          if (dispatchBeforeInput(field, text, 'insertReplacementText')) return;
+        } else {
+          const lines = text.split('\n');
+          // Probe with the first non-empty line to detect whether the editor
+          // consumes insertText. If the probe is canceled, editor is handling
+          // these events — continue the chain. Otherwise abort and let the
+          // execCommand fallback take over (don't pollute the editor with a
+          // partial chain of unhandled events).
+          let firstIdx = lines.findIndex(l => l.length > 0);
+          if (firstIdx === -1) firstIdx = 0;
+          // Need to dispatch insertParagraph for any leading empty lines too
+          // so block structure matches the source.
+          if (dispatchBeforeInput(field, lines[firstIdx] || '\n', firstIdx === 0 ? 'insertText' : 'insertParagraph')) {
+            // Editor took the probe. Some editors (Gmail compose) consume
+            // insertText but ignore synthetic insertParagraph — the result
+            // would be plain text with no breaks. Detect that on the first
+            // break event: try insertParagraph, then insertLineBreak, then
+            // synthesize an Enter keydown (Gmail honors this even when not
+            // trusted). If all three are ignored, abort so the execCommand
+            // fallback can run.
+            const dispatchBreak = () => {
+              if (dispatchBeforeInput(field, '\n', 'insertParagraph')) return true;
+              if (dispatchBeforeInput(field, '\n', 'insertLineBreak'))  return true;
+              const ev = new KeyboardEvent('keydown', {
+                key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                bubbles: true, cancelable: true, composed: true
+              });
+              return !field.dispatchEvent(ev);
+            };
+            let breaksHonored = true;
+            for (let i = firstIdx + 1; i < lines.length; i++) {
+              if (!dispatchBreak()) { breaksHonored = false; break; }
+              if (lines[i]) dispatchBeforeInput(field, lines[i], 'insertText');
+            }
+            if (breaksHonored) return;
+            // Breaks ignored mid-chain. Editor now holds partial text without
+            // structure — wipe it before falling through to execCommand so we
+            // don't compound the damage.
+            try {
+              const r = document.createRange();
+              r.selectNodeContents(field);
+              sel.removeAllRanges();
+              sel.addRange(r);
+              document.execCommand('delete', false, null);
+            } catch {}
+          }
+          // Probe failed — try insertReplacementText with the full text as a
+          // last beforeinput option (some spellcheck-style editors only catch
+          // this inputType and may handle embedded newlines themselves).
+          if (dispatchBeforeInput(field, text, 'insertReplacementText')) return;
+        }
 
         // 2. execCommand — Draft.js, Quill, older TinyMCE, Gmail compose.
         let ok = false;
-        const hasNewlines = text.includes('\n');
         if (!hasNewlines) {
           // Single-line: selectAll + insertText replaces selection in one shot.
           // Skipping the intermediate delete keeps the editor's internal model in sync
@@ -240,7 +295,13 @@
           if (cleared) {
             const lines = text.split('\n');
             lines.forEach((line, i) => {
-              if (i > 0) document.execCommand('insertParagraph', false, null);
+              if (i > 0) {
+                // Some editors return false for execCommand('insertParagraph')
+                // but accept insertHTML with a <br>. Try paragraph first; fall
+                // back to a literal <br> if the editor refused it.
+                const para = document.execCommand('insertParagraph', false, null);
+                if (!para) document.execCommand('insertHTML', false, '<br>');
+              }
               if (line) ok = document.execCommand('insertText', false, line) && ok;
             });
           }
@@ -251,10 +312,23 @@
             const range = document.createRange();
             range.selectNodeContents(field);
             range.deleteContents();
-            const node = document.createTextNode(text);
-            range.insertNode(node);
+            // Build a fragment of textNode/<br>/textNode... so newlines survive.
+            // A single createTextNode(text) collapses '\n' to whitespace under
+            // standard CSS white-space rules — flattens multi-paragraph output.
+            const frag = document.createDocumentFragment();
+            const lines = text.split('\n');
+            let lastNode = null;
+            lines.forEach((line, i) => {
+              if (i > 0) frag.appendChild(document.createElement('br'));
+              if (line) {
+                lastNode = document.createTextNode(line);
+                frag.appendChild(lastNode);
+              }
+            });
+            range.insertNode(frag);
             const endRange = document.createRange();
-            endRange.setStartAfter(node);
+            if (lastNode) endRange.setStartAfter(lastNode);
+            else endRange.selectNodeContents(field), endRange.collapse(false);
             endRange.collapse(true);
             sel.removeAllRanges();
             sel.addRange(endRange);
