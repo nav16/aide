@@ -26,7 +26,11 @@ export async function claude({ apiKey, model, user, system, maxTokens, temperatu
       ...(temperature != null ? { temperature } : {}),
       ...(stop?.length ? { stop_sequences: stop } : {}),
       ...(tools ? { tools, tool_choice: { type: 'tool', name: jsonSchema.name } } : {}),
-      system,
+      // Mark system prompt cacheable. System + (optional) tools are stable
+      // across same-kind calls (form-fill, define, explain, followup), so
+      // Anthropic returns a cache hit on the prefix and only bills the
+      // user-message delta. ~90% input-cost cut on repeat calls.
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: user }]
     })
   });
