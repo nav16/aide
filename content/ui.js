@@ -105,7 +105,18 @@
     dropdown.style.display = 'block';
     A.positionDropdown(field);
 
-    A.scrollListener = () => A.positionDropdown(field);
+    // Capture-phase scroll fires for every scrollable ancestor, on every tick.
+    // Coalesce repositioning into a single rAF per frame so getBoundingClientRect
+    // (which forces layout) runs at most ~60Hz instead of per scroll event.
+    let rafPending = false;
+    A.scrollListener = () => {
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        A.positionDropdown(field);
+      });
+    };
     window.addEventListener('scroll', A.scrollListener, { passive: true, capture: true });
   };
 
