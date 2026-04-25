@@ -350,6 +350,14 @@
   color: #ff7070;
 }
 
+.aif-def-word {
+  color: #ebebeb;
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
 .aif-def-pos {
   font-style: italic;
   color: rgba(255,255,255,0.45);
