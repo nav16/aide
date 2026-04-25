@@ -28,7 +28,12 @@ export async function gemini({ apiKey, model, user, system, maxTokens, temperatu
   );
   if (!res.ok) throw await extractError(res, 'Gemini API');
   const data = await res.json();
-  return data.candidates[0].content.parts[0].text.trim();
+  // Gemini can split a single response across multiple parts (especially
+  // with responseMimeType=json + thinking models that emit a prose lead-in
+  // separate from the JSON body). Concat all part texts so we never drop
+  // the actual JSON payload.
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  return parts.map(p => p.text || '').join('').trim();
 }
 
 function sanitizeSchemaForGemini(schema) {

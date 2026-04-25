@@ -1,5 +1,5 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, userMsg, explainPrompts, tokensForField, stopForField, cleanFormOutput } from './prompts.js';
+import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, userMsg, explainPrompts, tokensForField, stopForField, cleanFormOutput, cleanDefineOutput } from './prompts.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
@@ -59,7 +59,7 @@ async function handleExplain(req, signal) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
   const { system, user } = explainPrompts(req.kind, req.text, req.pageTitle, req.context, req.hostname);
-  return callProvider({
+  const raw = await callProvider({
     provider: req.provider,
     apiKey:   req.apiKey,
     model:    req.model,
@@ -73,4 +73,5 @@ async function handleExplain(req, signal) {
     // format:'json'). Returns a JSON string that the popup parses as before.
     jsonSchema:  req.kind === 'word' ? { name: 'define', schema: DEFINE_SCHEMA } : null
   }, signal);
+  return req.kind === 'word' ? cleanDefineOutput(raw) : raw;
 }

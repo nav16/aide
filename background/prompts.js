@@ -70,6 +70,27 @@ export function stopForField(ctx) {
 // inserting into the field. Only applied to form-fill, not explain/define.
 const PREAMBLE_RE = /^(?:sure[,!.\s]+|certainly[,!.\s]+|of course[,!.\s]+|here(?:'s| is| you go)[:,.\s-]+|okay[,!.\s]+|answer[:\s]+|response[:\s]+|output[:\s]+|value[:\s]+)/i;
 
+// Server-side cleanup for define output. Strip ```json fences and common
+// preambles before returning to the frontend so the popup parser sees pure
+// JSON regardless of which provider/model emitted it. Frontend extractJson
+// is still the last line of defense.
+export function cleanDefineOutput(raw) {
+  if (!raw) return raw;
+  let s = String(raw).trim();
+  // Strip ```json ... ``` or ``` ... ``` (open + close form).
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) s = fenced[1].trim();
+  // Strip an unclosed opening fence (truncated response).
+  s = s.replace(/^```(?:json)?\s*/i, '');
+  // Strip leading prose preambles up to the first '{'.
+  const brace = s.indexOf('{');
+  if (brace > 0) s = s.slice(brace);
+  // Trim trailing prose after the last balanced '}'.
+  const lastBrace = s.lastIndexOf('}');
+  if (lastBrace !== -1 && lastBrace < s.length - 1) s = s.slice(0, lastBrace + 1);
+  return s.trim();
+}
+
 export function cleanFormOutput(raw, ctx) {
   if (!raw) return raw;
   let s = raw.trim();
