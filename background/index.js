@@ -4,31 +4,29 @@ import { SYSTEM, MAX_TOKENS, TEMPERATURE, userMsg, explainPrompts, tokensForFiel
 const explainControllers  = new Map();
 const generateControllers = new Map();
 
+// Both generate and explain require reqId — UI always sets one, and we need
+// it to wire up cancellation. Reject early if missing rather than half-track
+// a request we can't cancel.
+function start(controllers, request, handler, sendResponse) {
+  if (request.reqId == null) {
+    sendResponse({ success: false, error: 'Internal: missing reqId.' });
+    return true;
+  }
+  const controller = new AbortController();
+  controllers.set(request.reqId, controller);
+  handler(request, controller.signal)
+    .then(text => sendResponse({ success: true, text }))
+    .catch(err => {
+      if (err.name === 'AbortError') return;
+      sendResponse({ success: false, error: err.message });
+    })
+    .finally(() => controllers.delete(request.reqId));
+  return true;
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'generate') {
-    const controller = new AbortController();
-    if (request.reqId != null) generateControllers.set(request.reqId, controller);
-    handleGenerate(request, controller.signal)
-      .then(text => sendResponse({ success: true, text }))
-      .catch(err => {
-        if (err.name === 'AbortError') return;
-        sendResponse({ success: false, error: err.message });
-      })
-      .finally(() => { if (request.reqId != null) generateControllers.delete(request.reqId); });
-    return true;
-  }
-  if (request.action === 'explain') {
-    const controller = new AbortController();
-    explainControllers.set(request.reqId, controller);
-    handleExplain(request, controller.signal)
-      .then(text => sendResponse({ success: true, text }))
-      .catch(err => {
-        if (err.name === 'AbortError') return;
-        sendResponse({ success: false, error: err.message });
-      })
-      .finally(() => explainControllers.delete(request.reqId));
-    return true;
-  }
+  if (request.action === 'generate') return start(generateControllers, request, handleGenerate, sendResponse);
+  if (request.action === 'explain')  return start(explainControllers,  request, handleExplain,  sendResponse);
   if (request.action === 'cancelExplain') {
     explainControllers.get(request.reqId)?.abort();
     explainControllers.delete(request.reqId);
