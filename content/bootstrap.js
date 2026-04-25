@@ -7,16 +7,11 @@
   }
   window.__aiFiller = true;
 
-  // Bail early in tiny sub-frames (payment widgets, tracking pixels, ad slots)
-  // so we never inject UI into Stripe Elements, reCAPTCHA, etc.
-  if (window !== window.top) {
-    const w = window.innerWidth  || document.documentElement.clientWidth  || 0;
-    const h = window.innerHeight || document.documentElement.clientHeight || 0;
-    if (w < 250 || h < 80) {
-      window.__aide = { skip: true };
-      return;
-    }
-  }
-
+  // Previously bailed on tiny sub-frames at document_idle to avoid injecting
+  // UI into Stripe Elements / reCAPTCHA. Removed: iframes that load below
+  // the threshold and resize later (e.g. Greenhouse application boards
+  // embedded by Thoughtworks careers) were skipped permanently. Payment/auth
+  // iframes are already filtered at attach time by isSensitiveField
+  // (cc-/card/cvv/otp/password autocomplete and name patterns).
   window.__aide = {};
 })();
