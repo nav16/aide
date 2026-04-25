@@ -313,6 +313,32 @@
 
 .aif-sel-body strong { color: #ebebeb; font-weight: 700; }
 .aif-sel-body em     { color: rgba(226,255,90,0.75); font-style: italic; }
+.aif-sel-body h2, .aif-sel-body h3, .aif-sel-body h4 {
+  color: #ebebeb; font-weight: 700; margin: 6px 0 2px; line-height: 1.3;
+}
+.aif-sel-body h2 { font-size: 13px; }
+.aif-sel-body h3 { font-size: 12.5px; }
+.aif-sel-body h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.aif-sel-body ul, .aif-sel-body ol { margin: 4px 0 4px 18px; padding: 0; }
+.aif-sel-body li { margin: 2px 0; }
+.aif-sel-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  background: rgba(255,255,255,0.08);
+  padding: 1px 4px; border-radius: 3px;
+  color: rgba(226,255,90,0.9);
+}
+.aif-sel-body pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.aif-sel-body pre code {
+  background: transparent; padding: 0; color: #e0e0e0;
+}
 
 .aif-sel-body.loading {
   color: rgba(226,255,90,0.5);
