@@ -24,7 +24,13 @@ export async function claude({ apiKey, model, user, system, maxTokens, temperatu
       model: model || 'claude-sonnet-4-6',
       max_tokens: maxTokens,
       ...(temperature != null ? { temperature } : {}),
-      ...(stop?.length ? { stop_sequences: stop } : {}),
+      // Anthropic rejects whitespace-only stop sequences ("each stop sequence
+      // must contain non-whitespace"). Filter them out; cleanFormOutput
+      // truncates non-multiline fields to the first line anyway.
+      ...((() => {
+        const filtered = (stop || []).filter(s => s && s.trim().length > 0);
+        return filtered.length ? { stop_sequences: filtered } : {};
+      })()),
       ...(tools ? { tools, tool_choice: { type: 'tool', name: jsonSchema.name } } : {}),
       // Mark system prompt cacheable. System + (optional) tools are stable
       // across same-kind calls (form-fill, define, explain, followup), so
