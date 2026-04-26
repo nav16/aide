@@ -340,6 +340,41 @@
         }
       }, 50);
     } else {
+      // Code editors (Monaco on LeetCode/VSCode-web, CodeMirror, Ace) mount a
+      // hidden textarea for IME/keyboard input but keep their real document in
+      // a separate model — setting `value` on the textarea never reaches the
+      // editor. Detect those by ancestor and dispatch a synthetic paste event
+      // with the text in DataTransfer; the editors all read clipboardData and
+      // apply the insert through their own command pipeline.
+      const codeHost = field.closest?.('.monaco-editor, .cm-editor, .CodeMirror, .ace_editor');
+      if (codeHost) {
+        field.focus();
+        let dt = null;
+        try {
+          dt = new DataTransfer();
+          dt.setData('text/plain', text);
+        } catch {}
+        if (dt) {
+          const pasteEvent = new ClipboardEvent('paste', {
+            clipboardData: dt,
+            bubbles: true,
+            cancelable: true
+          });
+          field.dispatchEvent(pasteEvent);
+          // beforeinput insertFromPaste covers editors that ignore synthetic
+          // ClipboardEvents but still honor InputEvents (some CM6 builds).
+          const ie = new InputEvent('beforeinput', {
+            inputType: 'insertFromPaste',
+            data: text,
+            dataTransfer: dt,
+            bubbles: true,
+            cancelable: true,
+            composed: true
+          });
+          field.dispatchEvent(ie);
+        }
+        return;
+      }
       const proto = field instanceof HTMLTextAreaElement
         ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
