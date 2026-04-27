@@ -97,6 +97,63 @@ export function cleanDefineOutput(raw) {
   return s.trim();
 }
 
+// Same cleanup shape as cleanDefineOutput but for fillForm. Ollama's
+// format-as-schema is a soft constraint on some local models — they still
+// emit ```json fences or a prose lead-in. Slice out the first balanced JSON
+// object so JSON.parse on the frontend doesn't throw.
+export function cleanFillFormOutput(raw) {
+  if (!raw) return raw;
+  let s = String(raw).trim();
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) s = fenced[1].trim();
+  s = s.replace(/^```(?:json)?\s*/i, '');
+  const brace = s.indexOf('{');
+  if (brace !== -1) {
+    if (brace > 0) s = s.slice(brace);
+    // Walk to the matching close so trailing prose is cut without breaking
+    // strings that contain literal '}' characters.
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (inStr) {
+        if (esc) { esc = false; continue; }
+        if (c === '\\') { esc = true; continue; }
+        if (c === '"')  { inStr = false; }
+        continue;
+      }
+      if (c === '"') { inStr = true; continue; }
+      if (c === '{')  depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) { end = i + 1; break; }
+      }
+    }
+    if (end !== -1) return s.slice(0, end).trim();
+  }
+  // Fallback: smaller Ollama models ignore format=schema and emit a YAML/dash
+  // list ("- f0: value"). Convert to the canonical JSON shape so the frontend
+  // parser doesn't have to know about provider-specific quirks. Matches both
+  // bare and quoted values; strips common quote wraps.
+  const lineRe = /^\s*[-*]?\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/;
+  const fills = [];
+  for (const line of s.split('\n')) {
+    const m = line.match(lineRe);
+    if (!m) continue;
+    let value = m[2].trim();
+    // Drop matched wrapping quotes/backticks so `"foo"` becomes foo.
+    const wraps = [['"','"'], ["'","'"], ['`','`']];
+    for (const [o, c] of wraps) {
+      if (value.length >= 2 && value.startsWith(o) && value.endsWith(c)) {
+        value = value.slice(1, -1);
+        break;
+      }
+    }
+    fills.push({ key: m[1], value });
+  }
+  if (fills.length) return JSON.stringify({ fills });
+  return s.trim();
+}
+
 export function cleanFormOutput(raw, ctx) {
   if (!raw) return raw;
   let s = raw.trim();
@@ -134,6 +191,76 @@ export function cleanFormOutput(raw, ctx) {
     s = s.slice(0, ctx.maxChars);
   }
   return s;
+}
+
+// One-shot multi-field fill. Schema returns one {key,value} per descriptor —
+// model fills the entire form in a single call so values stay internally
+// consistent (first-name + last-name + full-name + email all describe the same
+// person). Empty value = skip. Frontend pre-builds a key->element map so we
+// can route values back to elements without serializing DOM refs.
+export const FILL_FORM_SCHEMA = {
+  type: 'object',
+  properties: {
+    fills: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key:   { type: 'string', description: 'The "key" from the field descriptor.' },
+          value: { type: 'string', description: 'Value to insert. Empty string when no good value.' }
+        },
+        required: ['key', 'value'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['fills'],
+  additionalProperties: false
+};
+
+const FILL_FORM_SYSTEM = [
+  'You fill MULTIPLE related form fields in a single call.',
+  'Output format (STRICT):',
+  '- Return ONLY a single JSON object. No prose, no markdown, no code fences, no YAML, no dash-lists.',
+  '- The VERY FIRST character of your response MUST be `{`.',
+  '- The VERY LAST character of your response MUST be `}`.',
+  '- Shape: {"fills":[{"key":"<the key>","value":"<value or empty string>"}, ...]}',
+  '- Use double quotes. Escape internal quotes with \\". Do not emit comments.',
+  'Content rules:',
+  '- Return one entry per provided field key. Do not add or omit keys.',
+  '- Each value must satisfy the field\'s type, pattern, maxChars, and minChars.',
+  '- Keep values consistent across the form: first/last/full name, email, phone, address all describe the same person.',
+  '- If a field clearly maps to the user profile, use that value verbatim. Never invent profile data.',
+  '- If you have no good value and the field is NOT required, return "" (empty string).',
+  '- For required fields with no profile match, generate a plausible value of the right shape.',
+  '- For type=email/url/tel/number/date/time, output a single valid value of exactly that format.',
+  '- Single-line fields: no newlines. Honor maxChars strictly — concise beats truncated.',
+  'Example output for fields f0=name, f1=email:',
+  '{"fills":[{"key":"f0","value":"Jane Doe"},{"key":"f1","value":"jane@example.com"}]}'
+].join('\n');
+
+export function fillFormPrompts(fields, pageTitle, hostname) {
+  const pageLine = hostname ? `Page: "${pageTitle}" (${hostname})` : `Page: "${pageTitle}"`;
+  const lines = [pageLine];
+  const formCtx = fields.find(f => f.formContext)?.formContext;
+  if (formCtx) lines.push(`Form: "${formCtx}"`);
+  lines.push('Fields:');
+  const q = s => String(s).replace(/"/g, '\\"').slice(0, 160);
+  for (const f of fields) {
+    const parts = [`key=${f.key}`, `label="${q(f.label || '')}"`];
+    if (f.inputType && f.inputType !== 'text') parts.push(`type=${f.inputType}`);
+    if (f.placeholder)  parts.push(`placeholder="${q(f.placeholder)}"`);
+    if (f.autocomplete) parts.push(`autocomplete=${f.autocomplete}`);
+    if (f.pattern)      parts.push(`pattern=${q(f.pattern)}`);
+    if (f.required)     parts.push('required=yes');
+    if (f.maxChars)     parts.push(`maxChars=${f.maxChars}`);
+    if (f.minChars)     parts.push(`minChars=${f.minChars}`);
+    if (f.describedBy)  parts.push(`help="${q(f.describedBy)}"`);
+    if (f.currentValue) parts.push(`currentValue="${q(f.currentValue.slice(0, 80))}"`);
+    lines.push('- ' + parts.join(' | '));
+  }
+  lines.push('Generate values for ALL field keys above. One entry per key.');
+  return { system: FILL_FORM_SYSTEM, user: lines.join('\n') };
 }
 
 export function userMsg(ctx, userPrompt, pageTitle) {

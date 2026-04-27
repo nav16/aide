@@ -1,8 +1,9 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, userMsg, explainPrompts, tokensForField, stopForField, cleanFormOutput, cleanDefineOutput } from './prompts.js';
+import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
+const fillFormControllers = new Map();
 
 // Both generate and explain require reqId — UI always sets one, and we need
 // it to wire up cancellation. Reject early if missing rather than half-track
@@ -27,6 +28,7 @@ function start(controllers, request, handler, sendResponse) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generate') return start(generateControllers, request, handleGenerate, sendResponse);
   if (request.action === 'explain')  return start(explainControllers,  request, handleExplain,  sendResponse);
+  if (request.action === 'fillForm') return start(fillFormControllers, request, handleFillForm, sendResponse);
   if (request.action === 'cancelExplain') {
     explainControllers.get(request.reqId)?.abort();
     explainControllers.delete(request.reqId);
@@ -34,6 +36,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'cancelGenerate') {
     generateControllers.get(request.reqId)?.abort();
     generateControllers.delete(request.reqId);
+  }
+  if (request.action === 'cancelFillForm') {
+    fillFormControllers.get(request.reqId)?.abort();
+    fillFormControllers.delete(request.reqId);
   }
 });
 
@@ -57,6 +63,29 @@ async function handleGenerate(req, signal) {
     stop:        stopForField(req.fieldContext)
   }, signal);
   return cleanFormOutput(raw, req.fieldContext);
+}
+
+async function handleFillForm(req, signal) {
+  if (!req.provider) throw new Error('No provider configured. Open extension settings.');
+  if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
+  if (!Array.isArray(req.fields) || req.fields.length === 0) throw new Error('No fields to fill.');
+  const { system, user } = fillFormPrompts(req.fields, req.pageTitle, req.hostname);
+  // Headroom per field: ~80 tokens covers typical short values; long-form
+  // textareas in the form get clipped by the model honoring maxChars anyway.
+  const maxTokens = Math.min(2048, 64 + req.fields.length * 80);
+  const raw = await callProvider({
+    provider: req.provider,
+    apiKey:   req.apiKey,
+    model:    req.model,
+    baseUrl:  req.ollamaBaseUrl,
+    user,
+    system,
+    userProfile: req.userProfile,
+    maxTokens,
+    temperature: TEMPERATURE.form,
+    jsonSchema: { name: 'fillForm', schema: FILL_FORM_SCHEMA }
+  }, signal);
+  return cleanFillFormOutput(raw);
 }
 
 async function handleExplain(req, signal) {

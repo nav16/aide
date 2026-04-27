@@ -173,6 +173,45 @@
     return ctx;
   };
 
+  // Cheap visibility check: zero-size or display:none/visibility:hidden/opacity:0.
+  // getClientRects() is empty for `display:none`. Multi-step forms hide
+  // inactive steps via display:none, so this filters them out for free.
+  A.isFieldVisible = function (field) {
+    if (!field.getClientRects().length) return false;
+    const r = field.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    const cs = window.getComputedStyle(field);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return false;
+    return true;
+  };
+
+  // Find the form-shaped scope around an anchor field. Tries the closest
+  // <form>, then walks up looking for any container with 2+ matching fields
+  // (modern SPAs frequently skip the <form> element). Falls back to <body>
+  // so single-field "forms" still work, just at page scope.
+  A.collectFormFields = function (anchor) {
+    let scope = anchor.closest('form');
+    if (!scope) {
+      let el = anchor.parentElement;
+      while (el && el !== document.body) {
+        if (el.querySelectorAll(A.FIELD_SELECTOR).length >= 2) { scope = el; break; }
+        el = el.parentElement;
+      }
+    }
+    if (!scope) scope = document.body;
+    const all = Array.from(scope.querySelectorAll(A.FIELD_SELECTOR));
+    if (!all.includes(anchor)) all.unshift(anchor);
+    return all.filter(f => {
+      if ((f.tagName === 'INPUT' || f.tagName === 'TEXTAREA') && (f.readOnly || f.disabled)) return false;
+      if (A.isSensitiveField(f)) return false;
+      // Inner-editable check matches attach() — outer wrappers delegate to a
+      // child editable, instrumenting them corrupts the editor's DOM model.
+      if (A.isContentEditable(f) && f.querySelector('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]')) return false;
+      if (!A.isFieldVisible(f)) return false;
+      return true;
+    });
+  };
+
   // Dispatch a cancelable beforeinput event. Modern editors (Lexical,
   // ProseMirror v2, Slate) subscribe to this and apply edits via their own
   // models, calling preventDefault() to signal they took ownership. The browser

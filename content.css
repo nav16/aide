@@ -181,6 +181,147 @@
   50%       { opacity: 0.5; }
 }
 
+/* Fill-form button (secondary action below Generate) */
+.aif-fillform {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  color: rgba(226,255,90,0.85);
+  border: 1px solid rgba(226,255,90,0.25);
+  border-radius: 4px;
+  padding: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.aif-fillform:hover:not(:disabled)  { background: rgba(226,255,90,0.1); border-color: rgba(226,255,90,0.4); color: rgba(226,255,90,1); }
+.aif-fillform:active:not(:disabled) { transform: scale(0.99); }
+.aif-fillform:disabled              { opacity: 0.4; cursor: not-allowed; }
+.aif-fillform.loading                { opacity: 0.6; cursor: wait; }
+
+/* Fill-form preview panel — replaces compose UI while previewing */
+.aif-ff-panel {
+  margin-top: 4px;
+}
+.aif-ff-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+.aif-ff-row {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.aif-ff-row:last-child { border-bottom: none; }
+.aif-ff-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aif-ff-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  color: #e8e8e8;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 7px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.aif-ff-input::placeholder { color: rgba(255,255,255,0.25); font-style: italic; }
+.aif-ff-input:focus {
+  border-color: rgba(226,255,90,0.45);
+  background: rgba(255,255,255,0.08);
+}
+.aif-ff-empty {
+  color: rgba(255,255,255,0.4);
+  font-size: 11px;
+  padding: 10px;
+  text-align: center;
+}
+.aif-ff-actions { display: flex; gap: 6px; }
+.aif-ff-actions button {
+  flex: 1;
+  padding: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+.aif-ff-cancel {
+  background: rgba(255,255,255,0.06);
+  color: #aaa;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.aif-ff-cancel:hover { background: rgba(255,255,255,0.12); color: #ddd; }
+.aif-ff-apply {
+  background: rgba(226,255,90,0.9);
+  color: #0b0b0d;
+}
+.aif-ff-apply:hover { background: rgba(236,255,100,1); }
+
+/* Undo toast — bottom-right, auto-dismisses after 8s */
+.aif-ff-undo-toast {
+  position: fixed;
+  z-index: 2147483647;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(13,13,16,0.97);
+  border: 1px solid rgba(226,255,90,0.25);
+  border-radius: 5px;
+  padding: 9px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 12px;
+  color: #ddd;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  animation: aif-drop 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.aif-ff-undo-toast button {
+  background: none;
+  border: 1px solid rgba(226,255,90,0.4);
+  color: rgba(226,255,90,0.9);
+  border-radius: 3px;
+  padding: 3px 9px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.aif-ff-undo-toast button:hover { background: rgba(226,255,90,0.15); }
+.aif-ff-undo-toast .aif-ff-toast-close {
+  border-color: rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.5);
+  padding: 3px 7px;
+}
+.aif-ff-undo-toast .aif-ff-toast-close:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
 /* Result */
 .aif-result {
   display: none;

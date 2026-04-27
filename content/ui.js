@@ -23,7 +23,15 @@
     </div>
     <textarea class="aif-prompt" rows="2" placeholder="Describe what to generate (optional)…"></textarea>
     <button class="aif-generate">Generate</button>
+    <button class="aif-fillform" type="button">Fill entire form</button>
     <div class="aif-result"></div>
+    <div class="aif-ff-panel" style="display:none">
+      <div class="aif-ff-list"></div>
+      <div class="aif-ff-actions">
+        <button class="aif-ff-cancel" type="button">Cancel</button>
+        <button class="aif-ff-apply"  type="button">Apply</button>
+      </div>
+    </div>
   `;
   dropdown.style.display = 'none';
   document.body.appendChild(dropdown);
@@ -34,6 +42,32 @@
   A.activeField    = null;
   A.lastPrompt     = '';
   A.scrollListener = null;
+  // Fill-form state. fieldMap routes returned keys back to live elements.
+  // snapshots holds prior values so the undo toast can revert in one click.
+  A.ffState = null;
+  A.ffReqId = null;
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function setComposeMode() {
+    dropdown.querySelector('.aif-prompt').style.display    = '';
+    dropdown.querySelector('.aif-generate').style.display  = '';
+    // ffBtn visibility tracks the popup toggle; settings are cached after
+    // the first openDropdown so this read is synchronous in steady state.
+    const ffEnabled = !!(A.cachedSettings?.fillFormEnabled);
+    dropdown.querySelector('.aif-fillform').style.display  = ffEnabled ? '' : 'none';
+    dropdown.querySelector('.aif-ff-panel').style.display  = 'none';
+  }
+
+  function setPreviewMode() {
+    dropdown.querySelector('.aif-prompt').style.display    = 'none';
+    dropdown.querySelector('.aif-generate').style.display  = 'none';
+    dropdown.querySelector('.aif-fillform').style.display  = 'none';
+    dropdown.querySelector('.aif-result').style.display    = 'none';
+    dropdown.querySelector('.aif-ff-panel').style.display  = '';
+  }
 
   // ---- Positioning ----
 
@@ -74,6 +108,12 @@
       chrome.runtime.sendMessage({ action: 'cancelGenerate', reqId: A.currentGenReqId });
       A.currentGenReqId = null;
     }
+    if (A.ffReqId !== null) {
+      chrome.runtime.sendMessage({ action: 'cancelFillForm', reqId: A.ffReqId });
+      A.ffReqId = null;
+    }
+    A.ffState = null;
+    setComposeMode();
   };
 
   A.openDropdown = function (field) {
@@ -100,6 +140,13 @@
     A.getSettings().then(d => {
       const labels = { claude: 'Claude', openai: 'OpenAI', gemini: 'Gemini', ollama: 'Ollama' };
       dropdown.querySelector('.aif-badge').textContent = labels[d.provider] || '⚙ Not configured';
+      // Fill-form is gated by an explicit user toggle in the popup. Hide the
+      // button entirely when off so it doesn't take visual space; show it
+      // when enabled.
+      const ffBtn = dropdown.querySelector('.aif-fillform');
+      ffBtn.style.display = d.fillFormEnabled ? '' : 'none';
+      ffBtn.disabled = false;
+      ffBtn.title = '';
     });
 
     dropdown.style.display = 'block';
@@ -220,4 +267,194 @@
       dropdown.querySelector('.aif-generate').click();
     }
   });
+
+  // ---- Fill entire form ----
+
+  function buildDescriptors(fields) {
+    return fields.map((f, i) => {
+      const ctx = A.extractFieldContext(f);
+      // hostname is per-page, not per-field — drop from the descriptor and
+      // pass once at the request level.
+      delete ctx.hostname;
+      return { key: 'f' + i, ...ctx };
+    });
+  }
+
+  function renderFFList() {
+    if (!A.ffState) return;
+    const list = dropdown.querySelector('.aif-ff-list');
+    const rows = A.ffState.fills.map(f => {
+      const desc = A.ffState.descriptors.find(d => d.key === f.key);
+      const label = desc?.label || f.key;
+      const max = desc?.maxChars ? ` data-max="${desc.maxChars}"` : '';
+      return `
+        <div class="aif-ff-row" data-key="${escapeHtml(f.key)}">
+          <div class="aif-ff-label">${escapeHtml(label)}</div>
+          <input class="aif-ff-input" type="text" value="${escapeHtml(f.value || '')}"${max} placeholder="— skip —">
+        </div>`;
+    }).join('');
+    list.innerHTML = rows || '<div class="aif-ff-empty">No fields returned.</div>';
+  }
+
+  dropdown.querySelector('.aif-fillform').addEventListener('click', async () => {
+    if (!A.activeField) return;
+
+    const settings = await A.getSettings();
+    const apiKey = settings[`${settings.provider}ApiKey`] || '';
+    if (!settings.provider) return A.showError('Open extension settings and configure a provider first.');
+    if (settings.provider !== 'ollama' && !apiKey) return A.showError('API key not set. Open extension popup to configure.');
+
+    const fields = A.collectFormFields(A.activeField);
+    if (fields.length === 0) return A.showError('No fillable fields found.');
+
+    const descriptors = buildDescriptors(fields);
+    const fieldMap = new Map(fields.map((f, i) => ['f' + i, f]));
+
+    const ffBtn = dropdown.querySelector('.aif-fillform');
+    ffBtn.disabled = true;
+    ffBtn.classList.add('loading');
+    ffBtn.textContent = 'Reading form…';
+
+    if (A.ffReqId !== null) {
+      chrome.runtime.sendMessage({ action: 'cancelFillForm', reqId: A.ffReqId });
+    }
+    const reqId = ++A.genReqCounter;
+    A.ffReqId = reqId;
+
+    chrome.runtime.sendMessage({
+      action: 'fillForm',
+      reqId,
+      provider: settings.provider,
+      apiKey,
+      model: settings.model,
+      ollamaBaseUrl: settings.ollamaBaseUrl,
+      pageTitle: document.title,
+      hostname: location.hostname,
+      fields: descriptors,
+      userProfile: settings.userProfile || ''
+    }, (response) => {
+      if (reqId !== A.ffReqId) return;
+      A.ffReqId = null;
+      ffBtn.disabled = false;
+      ffBtn.classList.remove('loading');
+      ffBtn.textContent = 'Fill entire form';
+
+      if (chrome.runtime.lastError || !response?.success) {
+        return A.showError(response?.error || 'Fill form failed.');
+      }
+      let parsed;
+      try { parsed = JSON.parse(response.text); } catch (e) {
+        console.warn('[Aide] fillForm raw response:', response.text);
+        return A.showError('Bad response from model. Try a more capable model or Anthropic.');
+      }
+      // Some local models nest the array under a different key, or return the
+      // array directly. Accept any of the three shapes before giving up.
+      const fills = Array.isArray(parsed?.fills) ? parsed.fills
+                  : Array.isArray(parsed)        ? parsed
+                  : Array.isArray(parsed?.values)? parsed.values
+                  : [];
+      if (!fills.length) {
+        console.warn('[Aide] fillForm parsed but no fills:', parsed);
+        return A.showError('No values returned.');
+      }
+
+      A.ffState = { descriptors, fieldMap, fills };
+      renderFFList();
+      setPreviewMode();
+      // Reposition for the (now taller) preview panel.
+      A.positionDropdown(A.activeField);
+    });
+  });
+
+  dropdown.querySelector('.aif-ff-cancel').addEventListener('click', () => {
+    A.ffState = null;
+    setComposeMode();
+    dropdown.querySelector('.aif-ff-list').innerHTML = '';
+    if (A.activeField) A.positionDropdown(A.activeField);
+  });
+
+  dropdown.querySelector('.aif-ff-apply').addEventListener('click', () => {
+    if (!A.ffState) return;
+    // Read user-edited values from inputs.
+    const rows = dropdown.querySelectorAll('.aif-ff-row');
+    const items = [];
+    rows.forEach(row => {
+      const key = row.getAttribute('data-key');
+      const field = A.ffState.fieldMap.get(key);
+      if (!field) return;
+      const value = row.querySelector('.aif-ff-input').value;
+      if (!value) return; // empty = skip
+      // Snapshot the prior value so undo can restore it.
+      const prior = A.isContentEditable(field)
+        ? (field.innerHTML || '')
+        : (field.value || '');
+      items.push({ field, value, prior, isCE: A.isContentEditable(field) });
+    });
+
+    A.hideDropdown();
+    A.hideBtn();
+
+    if (!items.length) return;
+
+    // Stagger inserts ~50ms apart so dependent forms (validators, MobX
+    // re-renders, country->state cascades) settle between writes instead of
+    // racing.
+    items.forEach((it, i) => {
+      setTimeout(() => A.insertIntoField(it.field, it.value), i * 50);
+    });
+
+    showUndoToast(items);
+  });
+
+  // ---- Undo toast ----
+
+  let undoToast = null;
+  let undoTimer = null;
+
+  function showUndoToast(items) {
+    if (undoToast) undoToast.remove();
+    clearTimeout(undoTimer);
+
+    undoToast = document.createElement('div');
+    undoToast.className = 'aif-ff-undo-toast';
+    undoToast.innerHTML = `
+      <span>Filled ${items.length} field${items.length === 1 ? '' : 's'}.</span>
+      <button class="aif-ff-undo" type="button">Undo</button>
+      <button class="aif-ff-toast-close" type="button" aria-label="Dismiss">✕</button>
+    `;
+    document.body.appendChild(undoToast);
+
+    const dismiss = () => {
+      if (!undoToast) return;
+      undoToast.remove();
+      undoToast = null;
+      clearTimeout(undoTimer);
+    };
+
+    undoToast.querySelector('.aif-ff-undo').addEventListener('click', () => {
+      // Restore in reverse order; for contenteditable use innerHTML to keep
+      // any rich formatting that was there before our paste.
+      items.slice().reverse().forEach((it, i) => {
+        setTimeout(() => {
+          if (it.isCE) {
+            it.field.focus();
+            it.field.innerHTML = it.prior;
+            it.field.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          } else {
+            const proto = it.field instanceof HTMLTextAreaElement
+              ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+            if (setter) setter.call(it.field, it.prior);
+            else it.field.value = it.prior;
+            it.field.dispatchEvent(new Event('input', { bubbles: true }));
+            it.field.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, i * 30);
+      });
+      dismiss();
+    });
+
+    undoToast.querySelector('.aif-ff-toast-close').addEventListener('click', dismiss);
+    undoTimer = setTimeout(dismiss, 8000);
+  }
 })();
