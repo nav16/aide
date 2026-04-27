@@ -11,6 +11,8 @@
     <div class="aif-sel-header">
       <span class="aif-sel-type"></span>
       <div class="aif-sel-actions">
+        <button class="aif-sel-prev hidden" aria-label="Previous turn" type="button">◂</button>
+        <button class="aif-sel-next hidden" aria-label="Next turn" type="button">▸</button>
         <button class="aif-sel-copy hidden" aria-label="Copy" type="button">⧉</button>
         <button class="aif-sel-close" aria-label="Close" type="button">✕</button>
       </div>
@@ -28,6 +30,8 @@
   const copyBtn       = selPopup.querySelector('.aif-sel-copy');
   const followupForm  = selPopup.querySelector('.aif-sel-followup');
   const followupInput = selPopup.querySelector('.aif-sel-ask');
+  const prevBtn       = selPopup.querySelector('.aif-sel-prev');
+  const nextBtn       = selPopup.querySelector('.aif-sel-next');
 
   A.hideSelPopup = function () {
     selPopup.style.display = 'none';
@@ -161,6 +165,69 @@
     return s;
   }
 
+  // ---- View model ----
+  // A "view" is one bubble of the conversation: either the initial explain /
+  // define answer, or a follow-up Q/A pair. Stored as JSON on dataset.views
+  // so the popup survives selectionchange churn without losing state.
+  // Schema:
+  //   { kind: 'explain'|'word'|'followup', a: <plain answer text>,
+  //     q?: <followup question>, raw?: <raw word JSON for re-render>,
+  //     word?: <selected word for define re-render> }
+
+  function readViews() {
+    try { return JSON.parse(selPopup.dataset.views || '[]'); }
+    catch { return []; }
+  }
+  function writeViews(views) {
+    selPopup.dataset.views = JSON.stringify(views);
+  }
+  // Convert views into the {role, content} transcript shape the model expects
+  // for follow-up calls. Each followup view contributes two turns; initial
+  // answer contributes one assistant turn that anchors the conversation.
+  function turnsFromViews(views) {
+    const turns = [];
+    for (const v of views) {
+      if (v.q != null) turns.push({ role: 'user', content: v.q });
+      if (v.a != null) turns.push({ role: 'assistant', content: v.a });
+    }
+    return turns;
+  }
+
+  function renderView(idx) {
+    const views = readViews();
+    if (!views.length) return;
+    const clamped = Math.max(0, Math.min(idx, views.length - 1));
+    selPopup.dataset.viewIdx = String(clamped);
+    const v = views[clamped];
+
+    const typeEl = selPopup.querySelector('.aif-sel-type');
+    const bodyEl = selPopup.querySelector('.aif-sel-body');
+
+    const typeMap = { explain: 'EXPLAIN', word: 'DEFINE', followup: 'FOLLOW-UP' };
+    typeEl.textContent = typeMap[v.kind] || 'FOLLOW-UP';
+
+    let html = null;
+    if (v.kind === 'word' && v.raw) {
+      html = renderDefinition(v.raw, v.word);
+    }
+    if (!html) {
+      const qHtml = v.q ? `<div class="aif-sel-q">${escapeHtml(v.q)}</div>` : '';
+      html = qHtml + renderMarkdown(v.a || '');
+    }
+    bodyEl.innerHTML = html;
+    bodyEl.className = 'aif-sel-body';
+
+    copyBtn.dataset.copyText = v.a || '';
+    copyBtn.classList.toggle('hidden', !v.a);
+
+    const multi = views.length > 1;
+    prevBtn.classList.toggle('hidden', !multi);
+    nextBtn.classList.toggle('hidden', !multi);
+    prevBtn.disabled = !multi || clamped === 0;
+    nextBtn.disabled = !multi || clamped === views.length - 1;
+  }
+  A.renderView = renderView;
+
   // Pull ~200 chars on each side of the selection so the model can pick the
   // right sense for polysemous words ("bank", "stem", "running"). Walks up
   // from the selection's container until we find a block with enough text
@@ -278,10 +345,12 @@
     bodyEl.className = 'aif-sel-body loading';
     selPopup.dataset.selText = text;
     selPopup.dataset.originalText = text; // anchor for any follow-up turns
-    selPopup.dataset.priorAnswer = '';
-    selPopup.dataset.turns = '[]'; // multi-turn transcript, accumulated across follow-ups
+    selPopup.dataset.views = '[]';        // accumulated turns, navigable via prev/next
+    selPopup.dataset.viewIdx = '0';
     copyBtn.classList.add('hidden');
     followupForm.classList.add('hidden');
+    prevBtn.classList.add('hidden');
+    nextBtn.classList.add('hidden');
     followupInput.value = '';
 
     positionSelPopup(range);
@@ -317,29 +386,25 @@
         bodyEl.className = 'aif-sel-body aif-sel-error';
       } else {
         let displayText = response.text;
-        let html = null;
+        let raw = null;
         if (kind === 'word') {
-          html = renderDefinition(response.text, text);
-          if (html) {
-            const obj = extractJson(response.text);
+          const obj = extractJson(response.text);
+          if (obj) {
+            raw = response.text;
             // Plain-text version for clipboard / followup transcript: humans
             // and the LLM both prefer prose over JSON when chaining.
-            if (obj) {
-              displayText = [
-                obj.pos        ? `(${obj.pos})` : '',
-                obj.definition || obj.def || '',
-                (obj.example || obj.usage) ? `Ex: ${obj.example || obj.usage}` : ''
-              ].filter(Boolean).join(' ');
-            }
+            displayText = [
+              obj.pos        ? `(${obj.pos})` : '',
+              obj.definition || obj.def || '',
+              (obj.example || obj.usage) ? `Ex: ${obj.example || obj.usage}` : ''
+            ].filter(Boolean).join(' ');
           }
         }
-        bodyEl.innerHTML = html || renderMarkdown(displayText);
-        copyBtn.dataset.copyText = displayText;
-        copyBtn.classList.remove('hidden');
-        selPopup.dataset.priorAnswer = displayText;
-        // Seed transcript with the initial explain/define answer so the model
-        // sees it as the first assistant turn when a follow-up arrives.
-        selPopup.dataset.turns = JSON.stringify([{ role: 'assistant', content: displayText }]);
+        // Seed views with the initial answer. renderView paints body + nav.
+        const view = { kind, a: displayText };
+        if (kind === 'word' && raw) { view.raw = raw; view.word = text; }
+        writeViews([view]);
+        renderView(0);
         followupForm.classList.remove('hidden');
       }
       positionSelPopup(range);
@@ -374,9 +439,13 @@
 
   async function sendFollowup(question) {
     const originalText = selPopup.dataset.originalText || '';
-    const prior        = selPopup.dataset.priorAnswer  || '';
-    let turns = [];
-    try { turns = JSON.parse(selPopup.dataset.turns || '[]'); } catch {}
+    const views = readViews();
+    // Cap transcript at last 12 turns (~6 exchanges) so prompt size stays
+    // bounded on long sessions; older context falls off but the originalText
+    // stays anchored via the explainPrompts followup branch.
+    let turns = turnsFromViews(views);
+    if (turns.length > 12) turns = turns.slice(-12);
+    const lastAssistant = [...views].reverse().find(v => v.a)?.a || '';
     if (!originalText) return;
 
     const settings = await A.getSettings();
@@ -403,7 +472,7 @@
       reqId: myReqId,
       kind: 'followup',
       text: question,
-      context: { originalText, prior, turns },
+      context: { originalText, prior: lastAssistant, turns },
       pageTitle: document.title,
       hostname: location.hostname,
       provider: settings.provider,
@@ -420,17 +489,12 @@
         bodyEl.textContent = response?.error || 'Failed to fetch.';
         bodyEl.className = 'aif-sel-body aif-sel-error';
       } else {
-        bodyEl.innerHTML = renderMarkdown(response.text);
-        copyBtn.dataset.copyText = response.text;
-        copyBtn.classList.remove('hidden');
-        // Chain into prior answer so the next follow-up sees this turn too.
-        selPopup.dataset.priorAnswer = response.text;
-        // Append this Q/A pair to the transcript. Cap at the last 12 turns
-        // (~6 exchanges) to keep prompt size bounded on long sessions.
-        turns.push({ role: 'user', content: question });
-        turns.push({ role: 'assistant', content: response.text });
-        if (turns.length > 12) turns = turns.slice(-12);
-        selPopup.dataset.turns = JSON.stringify(turns);
+        // Append the new Q/A as another view; jump to it. Past views stay
+        // navigable via prev/next.
+        const updated = readViews();
+        updated.push({ kind: 'followup', q: question, a: response.text });
+        writeViews(updated);
+        renderView(updated.length - 1);
         followupInput.value = '';
         followupInput.focus();
       }
@@ -440,6 +504,22 @@
   // ---- Wiring ----
 
   selPopup.querySelector('.aif-sel-close').addEventListener('click', A.hideSelPopup);
+
+  prevBtn.addEventListener('click', () => {
+    const idx = parseInt(selPopup.dataset.viewIdx || '0', 10);
+    renderView(idx - 1);
+  });
+  nextBtn.addEventListener('click', () => {
+    const idx = parseInt(selPopup.dataset.viewIdx || '0', 10);
+    renderView(idx + 1);
+  });
+  // Arrow-key navigation when focus is anywhere inside the popup but not
+  // inside the followup input (left/right are caret nav there).
+  selPopup.addEventListener('keydown', (e) => {
+    if (e.target === followupInput) return;
+    if (e.key === 'ArrowLeft')  { prevBtn.click(); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { nextBtn.click(); e.preventDefault(); }
+  });
 
   copyBtn.addEventListener('click', async () => {
     const text = copyBtn.dataset.copyText || selPopup.querySelector('.aif-sel-body').textContent;
