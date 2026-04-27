@@ -47,6 +47,34 @@
     const ariaLabel = field.getAttribute('aria-label');
     if (ariaLabel) return ariaLabel.trim();
 
+    // Custom-element wrappers (spl-input, mat-form-field, etc.) put the
+    // visible label on the host, not the inner native input. When the
+    // anchor is inside a shadow root, walk up to the host and inspect its
+    // attributes / nearby light-DOM label before any further fallbacks.
+    const root = field.getRootNode?.();
+    if (root instanceof ShadowRoot && root.host) {
+      const host = root.host;
+      const hostLabel    = host.getAttribute('label');
+      if (hostLabel) return hostLabel.trim();
+      const hostAria     = host.getAttribute('aria-label');
+      if (hostAria) return hostAria.trim();
+      const hostLabelled = host.getAttribute('aria-labelledby');
+      if (hostLabelled) {
+        const text = hostLabelled.trim().split(/\s+/)
+          .map(id => document.getElementById(id)?.textContent?.trim())
+          .filter(Boolean).join(' ');
+        if (text) return text;
+      }
+      if (host.id) {
+        const m = document.querySelector(`label[for="${CSS.escape(host.id)}"]`);
+        if (m) return m.textContent.trim();
+      }
+      // Common pattern: <oc-input data-test="personal-info-first-name-input">
+      // — the data-test slug is a usable last-resort label source.
+      const dataTest = host.getAttribute('data-test') || host.getAttribute('formcontrolname');
+      if (dataTest) return A.humanizeName(dataTest.replace(/^.*-/, ''));
+    }
+
     const labelledBy = field.getAttribute('aria-labelledby');
     if (labelledBy) {
       const ids = labelledBy.trim().split(/\s+/);
@@ -173,6 +201,42 @@
     return ctx;
   };
 
+  // querySelectorAll stops at shadow boundaries. Walk the tree manually so
+  // forms built from custom elements (Angular's spl-input, Lit, Stencil, etc.)
+  // expose their inner native inputs to us.
+  function deepQueryAll(root, selector) {
+    const out = [];
+    (function walk(n) {
+      if (!n) return;
+      if (n.nodeType === 1) {
+        if (n.matches?.(selector)) out.push(n);
+        if (n.shadowRoot) walk(n.shadowRoot);
+      }
+      const kids = n.children;
+      if (kids) for (let i = 0; i < kids.length; i++) walk(kids[i]);
+    })(root);
+    return out;
+  }
+  A._deepQueryAll = deepQueryAll;
+
+  // Same idea for going up: parentNode stops at the shadow root, so when we
+  // hit one we hop to its host element. Returns the chain from `start` to the
+  // top of the document, crossing every shadow boundary on the way.
+  function crossShadowAncestors(start) {
+    const out = [];
+    let cur = start;
+    while (cur && cur !== document) {
+      out.push(cur);
+      if (cur.parentNode && cur.parentNode !== document) {
+        cur = cur.parentNode;
+      } else {
+        const r = cur.getRootNode?.();
+        cur = (r instanceof ShadowRoot) ? r.host : null;
+      }
+    }
+    return out;
+  }
+
   // Cheap visibility check: zero-size or display:none/visibility:hidden/opacity:0.
   // getClientRects() is empty for `display:none`. Multi-step forms hide
   // inactive steps via display:none, so this filters them out for free.
@@ -190,23 +254,33 @@
   // (modern SPAs frequently skip the <form> element). Falls back to <body>
   // so single-field "forms" still work, just at page scope.
   A.collectFormFields = function (anchor) {
-    let scope = anchor.closest('form');
+    // Climb crosses shadow boundaries — when the anchor is a native <input>
+    // inside an spl-input's shadow root, we can still reach the surrounding
+    // <form> in light DOM by hopping shadowRoot → host as needed.
+    const ancestors = crossShadowAncestors(anchor);
+    let scope = ancestors.find(el => el.tagName === 'FORM');
     if (!scope) {
-      let el = anchor.parentElement;
-      while (el && el !== document.body) {
-        if (el.querySelectorAll(A.FIELD_SELECTOR).length >= 2) { scope = el; break; }
-        el = el.parentElement;
+      // No <form>: pick the lowest ancestor with 2+ deep fields. Capped at
+      // the first 8 levels to avoid full-page deep scans on dense SPAs.
+      const limit = Math.min(ancestors.length, 8);
+      for (let i = 0; i < limit; i++) {
+        if (deepQueryAll(ancestors[i], A.FIELD_SELECTOR).length >= 2) { scope = ancestors[i]; break; }
       }
     }
     if (!scope) scope = document.body;
-    const all = Array.from(scope.querySelectorAll(A.FIELD_SELECTOR));
+
+    const all = deepQueryAll(scope, A.FIELD_SELECTOR);
     if (!all.includes(anchor)) all.unshift(anchor);
     return all.filter(f => {
+      // Skip our own injected UI — the dropdown's prompt textarea would
+      // otherwise be collected as a "form field" with a label scraped from
+      // the dropdown header ("Field: First name · Ollama · ✕").
+      if (A.dropdown?.contains(f) || f === A.btn) return false;
       if ((f.tagName === 'INPUT' || f.tagName === 'TEXTAREA') && (f.readOnly || f.disabled)) return false;
       if (A.isSensitiveField(f)) return false;
       // Inner-editable check matches attach() — outer wrappers delegate to a
       // child editable, instrumenting them corrupts the editor's DOM model.
-      if (A.isContentEditable(f) && f.querySelector('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]')) return false;
+      if (A.isContentEditable(f) && deepQueryAll(f, '[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]').length) return false;
       if (!A.isFieldVisible(f)) return false;
       return true;
     });
@@ -419,8 +493,10 @@
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (setter) setter.call(field, text);
       else field.value = text;
-      field.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-      field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+      // composed:true so events bubble out of any wrapping shadow root —
+      // custom elements (spl-input etc.) often attach listeners on the host.
+      field.dispatchEvent(new Event('input',  { bubbles: true, cancelable: true, composed: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
     }
   };
 

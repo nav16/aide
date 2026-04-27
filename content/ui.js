@@ -52,6 +52,7 @@
   }
 
   function setComposeMode() {
+    dropdown.querySelector('.aif-header').style.display    = '';
     dropdown.querySelector('.aif-prompt').style.display    = '';
     dropdown.querySelector('.aif-generate').style.display  = '';
     // ffBtn visibility tracks the popup toggle; settings are cached after
@@ -62,6 +63,9 @@
   }
 
   function setPreviewMode() {
+    // Header describes the anchor field — irrelevant when previewing values
+    // for the entire form. Hide compose UI + header, show only the preview.
+    dropdown.querySelector('.aif-header').style.display    = 'none';
     dropdown.querySelector('.aif-prompt').style.display    = 'none';
     dropdown.querySelector('.aif-generate').style.display  = 'none';
     dropdown.querySelector('.aif-fillform').style.display  = 'none';
