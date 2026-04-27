@@ -358,6 +358,26 @@ body::before {
 
 .save-arr { font-size: 15px; opacity: 0.6; }
 
+/* ── Ghost button (history) ── */
+.ghost-btn {
+  width: 100%;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 9px 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.ghost-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── Status ── */
 .status {
   font-family: var(--mono);

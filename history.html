@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Aide · History</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Syne+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="history.css">
+</head>
+<body>
+  <div class="page">
+
+    <header class="hd">
+      <div class="hd-mark">✦</div>
+      <div class="hd-text">
+        <div class="hd-name">AIDE · HISTORY</div>
+        <div class="hd-sub">YOUR PAST INTERACTIONS</div>
+      </div>
+      <button id="clearAll" class="danger-btn" type="button">CLEAR ALL</button>
+    </header>
+
+    <div class="rule"></div>
+
+    <div class="toolbar">
+      <div class="filters" role="group" aria-label="Kind filter">
+        <button class="filter active" data-kind="all">ALL</button>
+        <button class="filter" data-kind="explain">EXPLAIN</button>
+        <button class="filter" data-kind="word">DEFINE</button>
+        <button class="filter" data-kind="followup">FOLLOW-UP</button>
+        <button class="filter" data-kind="generate">GENERATE</button>
+        <button class="filter" data-kind="fillForm">FILL FORM</button>
+      </div>
+      <input id="search" class="search" type="text" placeholder="Search input or output…" spellcheck="false">
+    </div>
+
+    <div id="list" class="list"></div>
+    <div id="empty" class="empty hidden">No entries yet. Use Aide on a page — explain text, generate field values, or fill a form.</div>
+
+  </div>
+  <script src="history.js"></script>
+</body>
+</html>

@@ -31,6 +31,7 @@ const userProfileEl  = $('userProfile');
 const fillFormToggle = $('fillFormEnabled');
 const modelEl        = $('model');
 const saveBtn        = $('save');
+const historyBtn     = $('openHistory');
 const statusEl       = $('status');
 const statusDot      = $('statusDot');
 const apiKeyGroup    = $('apiKeyGroup');
@@ -151,6 +152,10 @@ saveBtn.addEventListener('click', () => {
       flashStatus('SETTINGS SAVED', 'success');
     });
   });
+});
+
+historyBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 });
 
 function flashStatus(msg, type) {

@@ -238,6 +238,7 @@
       fieldContext: A.extractFieldContext(A.activeField),
       prompt: A.lastPrompt,
       pageTitle: document.title,
+      hostname: location.hostname,
       userProfile: settings.userProfile || ''
     };
 

@@ -1,5 +1,6 @@
 import { callProvider } from './providers/index.js';
 import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
+import { appendHistory } from './history.js';
 
 const explainControllers  = new Map();
 const generateControllers = new Map();
@@ -8,7 +9,7 @@ const fillFormControllers = new Map();
 // Both generate and explain require reqId — UI always sets one, and we need
 // it to wire up cancellation. Reject early if missing rather than half-track
 // a request we can't cancel.
-function start(controllers, request, handler, sendResponse) {
+function start(controllers, request, handler, sendResponse, recordFn) {
   if (request.reqId == null) {
     sendResponse({ success: false, error: 'Internal: missing reqId.' });
     return true;
@@ -16,7 +17,16 @@ function start(controllers, request, handler, sendResponse) {
   const controller = new AbortController();
   controllers.set(request.reqId, controller);
   handler(request, controller.signal)
-    .then(text => sendResponse({ success: true, text }))
+    .then(text => {
+      sendResponse({ success: true, text });
+      if (recordFn) {
+        // Fire-and-forget — history failures must not surface to the user;
+        // their request already succeeded.
+        Promise.resolve()
+          .then(() => appendHistory(recordFn(request, text)))
+          .catch(() => {});
+      }
+    })
     .catch(err => {
       if (err.name === 'AbortError') return;
       sendResponse({ success: false, error: err.message });
@@ -25,10 +35,56 @@ function start(controllers, request, handler, sendResponse) {
   return true;
 }
 
+function generateRecord(req, text) {
+  return {
+    kind: 'generate',
+    hostname: req.hostname || '',
+    pageTitle: req.pageTitle || '',
+    provider: req.provider,
+    model: req.model,
+    input: {
+      fieldLabel: req.fieldContext?.label || '',
+      maxChars:   req.fieldContext?.maxChars || null,
+      prompt:     req.prompt || ''
+    },
+    output: text
+  };
+}
+
+function explainRecord(req, text) {
+  return {
+    kind: req.kind, // 'word' | 'explain' | 'followup'
+    hostname: req.hostname || '',
+    pageTitle: req.pageTitle || '',
+    provider: req.provider,
+    model: req.model,
+    input: {
+      text: req.text || '',
+      originalText: req.context?.originalText || '',
+      surrounding:  req.context?.surrounding  || ''
+    },
+    output: text
+  };
+}
+
+function fillFormRecord(req, text) {
+  return {
+    kind: 'fillForm',
+    hostname: req.hostname || '',
+    pageTitle: req.pageTitle || '',
+    provider: req.provider,
+    model: req.model,
+    input: {
+      fields: (req.fields || []).map(f => ({ key: f.key, label: f.label, maxChars: f.maxChars || null }))
+    },
+    output: text
+  };
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'generate') return start(generateControllers, request, handleGenerate, sendResponse);
-  if (request.action === 'explain')  return start(explainControllers,  request, handleExplain,  sendResponse);
-  if (request.action === 'fillForm') return start(fillFormControllers, request, handleFillForm, sendResponse);
+  if (request.action === 'generate') return start(generateControllers, request, handleGenerate, sendResponse, generateRecord);
+  if (request.action === 'explain')  return start(explainControllers,  request, handleExplain,  sendResponse, explainRecord);
+  if (request.action === 'fillForm') return start(fillFormControllers, request, handleFillForm, sendResponse, fillFormRecord);
   if (request.action === 'cancelExplain') {
     explainControllers.get(request.reqId)?.abort();
     explainControllers.delete(request.reqId);
