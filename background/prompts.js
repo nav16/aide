@@ -9,10 +9,24 @@ export const SYSTEM = [
   'If a User profile block is given, use its values verbatim for matching fields (name, email, phone, address). Never invent profile data.'
 ].join('\n');
 
-// Max tokens by call kind. Define output is a small JSON object (~80 tokens
-// in practice). Cap kept loose enough that any rogue preamble Gemini emits
-// before the JSON does not truncate the JSON itself.
+// Hard ceilings by call kind. Define output is a small JSON object (~80
+// tokens in practice). The cap is loose enough that any rogue preamble from
+// Gemini before the JSON does not truncate the JSON itself.
 export const MAX_TOKENS = { word: 256, explain: 512, followup: 384 };
+
+// Per-call token cap that scales with the input length. A 4-word selection
+// asks for a tiny explanation; a 1k-char passage may want the full ceiling.
+// Letting the provider know the real budget lets it plan generation and,
+// crucially, lets it terminate sooner once it has enough — meaningful
+// latency win on short selections.
+export function tokensForExplain(kind, text) {
+  const len = (text || '').length;
+  const ceil = MAX_TOKENS[kind] || MAX_TOKENS.explain;
+  // Floor covers structured-output overhead (JSON braces, fence preambles
+  // some providers emit before the body) so we never starve the response.
+  const floor = kind === 'followup' ? 128 : 96;
+  return Math.min(ceil, floor + Math.ceil(len / 3));
+}
 
 // Schema for define output. Used by providers that support native structured
 // outputs to lock the response shape — kills cross-model variance and removes

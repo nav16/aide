@@ -1,5 +1,5 @@
 import { callProvider } from './providers/index.js';
-import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
+import { SYSTEM, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, tokensForExplain, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
 import { appendHistory } from './history.js';
 
 // Today's date is prepended to every system prompt so the model can resolve
@@ -169,7 +169,7 @@ async function handleExplain(req, signal) {
     baseUrl:  req.ollamaBaseUrl,
     user,
     system:      withTodayDate(system),
-    maxTokens:   MAX_TOKENS[req.kind] || MAX_TOKENS.explain,
+    maxTokens:   tokensForExplain(req.kind, req.text),
     temperature: TEMPERATURE[req.kind] ?? TEMPERATURE.explain,
     // Native structured-output mode for define. Each provider wires this to
     // its own JSON-mode mechanism (json_schema / responseSchema / tool-use /
