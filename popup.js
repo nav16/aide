@@ -27,6 +27,7 @@ const providerInput  = $('provider');
 const apiKeyEl       = $('apiKey');
 const toggleKeyBtn   = $('toggleKey');
 const ollamaUrlEl    = $('ollamaBaseUrl');
+const userProfileEl  = $('userProfile');
 const modelEl        = $('model');
 const saveBtn        = $('save');
 const statusEl       = $('status');
@@ -139,8 +140,14 @@ saveBtn.addEventListener('click', () => {
     return flashStatus('SELECT A MODEL', 'error');
   }
 
+  // Profile lives in storage.local — it's freeform PII (name/email/address)
+  // and we don't want it riding the sync channel to other devices.
+  const userProfile = userProfileEl.value;
+
   chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl }, () => {
-    flashStatus('SETTINGS SAVED', 'success');
+    chrome.storage.local.set({ userProfile }, () => {
+      flashStatus('SETTINGS SAVED', 'success');
+    });
   });
 });
 
@@ -159,6 +166,10 @@ function flashStatus(msg, type) {
 }
 
 // ── Load saved settings ──
+chrome.storage.local.get(['userProfile'], local => {
+  userProfileEl.value = local.userProfile || '';
+});
+
 chrome.storage.sync.get(ALL_KEYS, async data => {
   const provider = data.provider || 'claude';
   providerInput.value   = provider;

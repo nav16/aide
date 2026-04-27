@@ -186,7 +186,8 @@
       ollamaBaseUrl: settings.ollamaBaseUrl,
       fieldContext: A.extractFieldContext(A.activeField),
       prompt: A.lastPrompt,
-      pageTitle: document.title
+      pageTitle: document.title,
+      userProfile: settings.userProfile || ''
     };
 
     const resetBtn = () => {

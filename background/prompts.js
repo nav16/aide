@@ -9,7 +9,8 @@ export const SYSTEM = [
   '- If "Pattern (regex)" is given, the output MUST match it.',
   '- For input type email/url/tel/number/date/time, output a single valid value of that exact format and nothing else.',
   '- For single-line inputs (anything other than textarea/contenteditable), output a single line with no newlines.',
-  '- For textarea/contenteditable, newlines are allowed; use them only when the content needs them.'
+  '- For textarea/contenteditable, newlines are allowed; use them only when the content needs them.',
+  '- If a "User profile" block is provided, prefer values from it whenever the field clearly maps to profile data (name, email, phone, address, etc.). Use the profile value verbatim. Never invent profile data that is not present.'
 ].join('\n');
 
 // Max tokens by call kind. Define output is a small JSON object (~80 tokens
@@ -135,11 +136,18 @@ export function cleanFormOutput(raw, ctx) {
   return s;
 }
 
-export function userMsg(ctx, userPrompt, pageTitle) {
+export function userMsg(ctx, userPrompt, pageTitle, userProfile) {
   ctx = ctx || {};
   const lines = [];
   const pageLine = ctx.hostname ? `Page: "${pageTitle}" (${ctx.hostname})` : `Page: "${pageTitle}"`;
   lines.push(pageLine);
+  // Profile block: freeform user-provided text. Pulled in only for form-fills
+  // (not define/explain/followup). Trimmed so an empty textarea adds nothing.
+  const profile = (userProfile || '').trim();
+  if (profile) {
+    lines.push('User profile (use values from here when the field maps to profile data; never invent):');
+    lines.push(profile);
+  }
   if (ctx.formContext)  lines.push(`Form: "${ctx.formContext}"`);
   lines.push(`Field: "${ctx.label || 'this field'}"`);
   if (ctx.placeholder)  lines.push(`Placeholder: "${ctx.placeholder}"`);

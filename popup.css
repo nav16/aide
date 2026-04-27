@@ -194,6 +194,15 @@ body::before {
 }
 .field.bare:focus { border-color: var(--accent); outline: none; }
 
+.field.ta {
+  resize: vertical;
+  min-height: 92px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
 .glyph-btn {
   background: transparent;
   border: none;

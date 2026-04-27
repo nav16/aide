@@ -10,10 +10,16 @@
 
   A.getSettings = function () {
     if (A.cachedSettings) return Promise.resolve(A.cachedSettings);
-    return new Promise(r => chrome.storage.sync.get(A.SETTINGS_KEYS, data => {
-      A.cachedSettings = data;
-      r(data);
-    }));
+    // userProfile lives in storage.local (freeform PII, never synced).
+    // Merge into the same cached object so callers see one settings shape.
+    return Promise.all([
+      new Promise(r => chrome.storage.sync.get(A.SETTINGS_KEYS, r)),
+      new Promise(r => chrome.storage.local.get(['userProfile'], r))
+    ]).then(([sync, local]) => {
+      const merged = { ...sync, userProfile: local.userProfile || '' };
+      A.cachedSettings = merged;
+      return merged;
+    });
   };
 
   chrome.storage.onChanged.addListener(() => { A.cachedSettings = null; });
