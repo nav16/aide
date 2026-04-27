@@ -2,6 +2,18 @@ import { callProvider } from './providers/index.js';
 import { SYSTEM, MAX_TOKENS, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
 import { appendHistory } from './history.js';
 
+// Today's date is prepended to every system prompt so the model can resolve
+// time-relative fields ("today", "next Friday", "year of birth assuming I'm
+// 30") instead of falling back to its training cutoff. Day-of-week helps with
+// "next Monday"-style reasoning. Re-evaluated per request, so the SW
+// surviving across midnight still produces a fresh date.
+function withTodayDate(system) {
+  const d = new Date();
+  const iso = d.toISOString().slice(0, 10);
+  const dow = d.toLocaleDateString('en-US', { weekday: 'long' });
+  return `Today: ${iso} (${dow})\n${system}`;
+}
+
 const explainControllers  = new Map();
 const generateControllers = new Map();
 const fillFormControllers = new Map();
@@ -109,7 +121,7 @@ async function handleGenerate(req, signal) {
     model:    req.model,
     baseUrl:  req.ollamaBaseUrl,
     user,
-    system:      SYSTEM,
+    system:      withTodayDate(SYSTEM),
     // Profile rides as a separate input — Anthropic puts it in a 2nd cached
     // system block, others append to the system text. Keeps the SYSTEM
     // prefix cacheable across users and profile changes.
@@ -136,7 +148,7 @@ async function handleFillForm(req, signal) {
     model:    req.model,
     baseUrl:  req.ollamaBaseUrl,
     user,
-    system,
+    system:      withTodayDate(system),
     userProfile: req.userProfile,
     maxTokens,
     temperature: TEMPERATURE.form,
@@ -156,7 +168,7 @@ async function handleExplain(req, signal) {
     model:    req.model,
     baseUrl:  req.ollamaBaseUrl,
     user,
-    system,
+    system:      withTodayDate(system),
     maxTokens:   MAX_TOKENS[req.kind] || MAX_TOKENS.explain,
     temperature: TEMPERATURE[req.kind] ?? TEMPERATURE.explain,
     // Native structured-output mode for define. Each provider wires this to
