@@ -136,18 +136,11 @@ export function cleanFormOutput(raw, ctx) {
   return s;
 }
 
-export function userMsg(ctx, userPrompt, pageTitle, userProfile) {
+export function userMsg(ctx, userPrompt, pageTitle) {
   ctx = ctx || {};
   const lines = [];
   const pageLine = ctx.hostname ? `Page: "${pageTitle}" (${ctx.hostname})` : `Page: "${pageTitle}"`;
   lines.push(pageLine);
-  // Profile block: freeform user-provided text. Pulled in only for form-fills
-  // (not define/explain/followup). Trimmed so an empty textarea adds nothing.
-  const profile = (userProfile || '').trim();
-  if (profile) {
-    lines.push('User profile (use values from here when the field maps to profile data; never invent):');
-    lines.push(profile);
-  }
   if (ctx.formContext)  lines.push(`Form: "${ctx.formContext}"`);
   lines.push(`Field: "${ctx.label || 'this field'}"`);
   if (ctx.placeholder)  lines.push(`Placeholder: "${ctx.placeholder}"`);

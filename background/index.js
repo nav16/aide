@@ -40,7 +40,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleGenerate(req, signal) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
-  const user = userMsg(req.fieldContext, req.prompt, req.pageTitle, req.userProfile);
+  const user = userMsg(req.fieldContext, req.prompt, req.pageTitle);
   const raw = await callProvider({
     provider: req.provider,
     apiKey:   req.apiKey,
@@ -48,6 +48,10 @@ async function handleGenerate(req, signal) {
     baseUrl:  req.ollamaBaseUrl,
     user,
     system:      SYSTEM,
+    // Profile rides as a separate input — Anthropic puts it in a 2nd cached
+    // system block, others append to the system text. Keeps the SYSTEM
+    // prefix cacheable across users and profile changes.
+    userProfile: req.userProfile,
     maxTokens:   tokensForField(req.fieldContext),
     temperature: TEMPERATURE.form,
     stop:        stopForField(req.fieldContext)

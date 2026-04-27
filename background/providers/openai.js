@@ -1,7 +1,14 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function openai({ apiKey, model, user, system, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function openai({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
+  // OpenAI does prefix-cache automatically (>1024 tokens), so keeping system
+  // stable across calls maximizes hit rate. Profile appended at the tail
+  // means the base prefix stays cacheable; profile edits only invalidate
+  // the tail.
+  const sys = userProfile?.trim()
+    ? `${system}\n\nUser profile (use values from here when the field maps to profile data; never invent):\n${userProfile.trim()}`
+    : system;
   // strict json_schema is the modern path; fall back to json_object for
   // older models that don't support schema-mode by hard-coding the looser
   // form. Both modes return JSON inside message.content so the caller can
@@ -24,7 +31,7 @@ export async function openai({ apiKey, model, user, system, maxTokens, temperatu
       ...(stop?.length ? { stop } : {}),
       ...(responseFormat ? { response_format: responseFormat } : {}),
       messages: [
-        { role: 'system', content: system },
+        { role: 'system', content: sys },
         { role: 'user',   content: user }
       ]
     })

@@ -1,7 +1,13 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function gemini({ apiKey, model, user, system, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
+  // Gemini's implicit caching keys off the request prefix; keeping system
+  // stable across calls + appending the profile at the tail preserves the
+  // cacheable prefix and only the profile portion changes per-user.
+  const sys = userProfile?.trim()
+    ? `${system}\n\nUser profile (use values from here when the field maps to profile data; never invent):\n${userProfile.trim()}`
+    : system;
   const generationConfig = {};
   if (maxTokens   != null) generationConfig.maxOutputTokens = maxTokens;
   if (temperature != null) generationConfig.temperature     = temperature;
@@ -20,7 +26,7 @@ export async function gemini({ apiKey, model, user, system, maxTokens, temperatu
       signal,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
+        system_instruction: { parts: [{ text: sys }] },
         contents: [{ parts: [{ text: user }] }],
         ...(Object.keys(generationConfig).length ? { generationConfig } : {})
       })

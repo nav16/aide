@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function claude({ apiKey, model, user, system, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function claude({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
   // Claude has no JSON-mode flag; tool-use with tool_choice forces the model
   // to emit a tool_use block whose `input` is a JSON object matching the
   // declared schema. We extract that and stringify so callers see plain JSON.
@@ -36,7 +36,23 @@ export async function claude({ apiKey, model, user, system, maxTokens, temperatu
       // across same-kind calls (form-fill, define, explain, followup), so
       // Anthropic returns a cache hit on the prefix and only bills the
       // user-message delta. ~90% input-cost cut on repeat calls.
-      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+      //
+      // When a userProfile is set, append it as a SECOND cacheable block.
+      // Two cache_control breakpoints means a profile edit only invalidates
+      // the tail block — the base SYSTEM prefix stays hot. Profile is
+      // re-billed once per change, then cached across every subsequent call.
+      system: (() => {
+        const blocks = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+        const profile = (userProfile || '').trim();
+        if (profile) {
+          blocks.push({
+            type: 'text',
+            text: `User profile (use values from here when the field maps to profile data; never invent):\n${profile}`,
+            cache_control: { type: 'ephemeral' }
+          });
+        }
+        return blocks;
+      })(),
       messages: [{ role: 'user', content: user }]
     })
   });
