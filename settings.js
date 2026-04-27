@@ -2,26 +2,22 @@
 
 const STATIC_MODELS = {
   claude: [
-    { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6  —  recommended' },
-    { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5  —  fast' },
-    { value: 'claude-opus-4-7',           label: 'Opus 4.7   —  powerful' }
+    { value: 'claude-sonnet-4-6',          label: 'Sonnet 4.6  —  recommended' },
+    { value: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5   —  fast' },
+    { value: 'claude-opus-4-7',            label: 'Opus 4.7    —  powerful' }
   ],
   openai: [
     { value: 'gpt-4o',       label: 'GPT-4o        —  recommended' },
-    { value: 'gpt-4o-mini',  label: 'GPT-4o Mini  —  fast' },
-    { value: 'gpt-4-turbo',  label: 'GPT-4 Turbo  —  legacy' }
+    { value: 'gpt-4o-mini',  label: 'GPT-4o Mini   —  fast' },
+    { value: 'gpt-4-turbo',  label: 'GPT-4 Turbo   —  legacy' }
   ],
   gemini: [
-    { value: 'gemini-3-flash-preview',        label: 'Gemini 3 Flash      —  fast' },
-    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite  —  cost-efficient' }
+    { value: 'gemini-3-flash-preview',          label: 'Gemini 3 Flash         —  fast' },
+    { value: 'gemini-3.1-flash-lite-preview',   label: 'Gemini 3.1 Flash Lite  —  cost-efficient' }
   ]
 };
 
-// Popup persists only the connection-level settings (provider, model, keys).
-// Profile + fillFormEnabled live exclusively on the full settings page now —
-// not read or written here. fillFormEnabled is preserved on save by passing
-// through whatever the settings page wrote.
-const SYNC_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled'];
+const ALL_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled'];
 const apiKeyName = p => `${p}ApiKey`;
 
 const $ = id => document.getElementById(id);
@@ -30,14 +26,13 @@ const providerInput  = $('provider');
 const apiKeyEl       = $('apiKey');
 const toggleKeyBtn   = $('toggleKey');
 const ollamaUrlEl    = $('ollamaBaseUrl');
+const userProfileEl  = $('userProfile');
+const fillFormToggle = $('fillFormEnabled');
 const modelEl        = $('model');
 const saveBtn        = $('save');
-const historyBtn     = $('openHistory');
-const settingsBtn    = $('openSettings');
 const statusEl       = $('status');
-const statusDot      = $('statusDot');
-const apiKeyGroup    = $('apiKeyGroup');
-const ollamaGroup    = $('ollamaUrlGroup');
+const apiKeyCard     = $('apiKeyCard');
+const ollamaCard     = $('ollamaUrlCard');
 const refreshBtn     = $('refreshModels');
 const tabs           = document.querySelectorAll('.tab');
 
@@ -51,7 +46,7 @@ tabs.forEach(tab => {
     tab.classList.add('active');
     const provider = tab.dataset.value;
     providerInput.value = provider;
-    const saved = await new Promise(r => chrome.storage.sync.get(SYNC_KEYS, r));
+    const saved = await new Promise(r => chrome.storage.sync.get(ALL_KEYS, r));
     const savedModel = saved.provider === provider ? saved.model : null;
     apiKeyEl.value = saved[apiKeyName(provider)] || '';
     applyProvider(provider, savedModel);
@@ -64,8 +59,8 @@ function setActiveTab(value) {
 
 function applyProvider(provider, selectedModel) {
   if (provider === 'ollama') {
-    hide(apiKeyGroup);
-    show(ollamaGroup);
+    hide(apiKeyCard);
+    show(ollamaCard);
     show(refreshBtn);
     fetchOllamaModels(ollamaUrlEl.value).then(models => {
       if (models && models.length > 0) {
@@ -79,8 +74,8 @@ function applyProvider(provider, selectedModel) {
       }
     });
   } else {
-    show(apiKeyGroup);
-    hide(ollamaGroup);
+    show(apiKeyCard);
+    hide(ollamaCard);
     hide(refreshBtn);
     populateModels(STATIC_MODELS[provider] || [], selectedModel);
   }
@@ -135,38 +130,39 @@ saveBtn.addEventListener('click', () => {
     return flashStatus('SELECT A MODEL', 'error');
   }
 
-  // Don't touch fillFormEnabled here — settings page owns it. Same for
-  // userProfile in storage.local.
-  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl }, () => {
-    flashStatus('SAVED', 'success');
-  });
-});
+  // Profile lives in storage.local — freeform PII (name/email/address) should
+  // never ride the sync channel to other devices.
+  const userProfile     = userProfileEl.value;
+  const fillFormEnabled = fillFormToggle.checked;
 
-settingsBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
-});
-historyBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
+  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl, fillFormEnabled }, () => {
+    chrome.storage.local.set({ userProfile }, () => {
+      flashStatus('SETTINGS SAVED', 'success');
+    });
+  });
 });
 
 function flashStatus(msg, type) {
   statusEl.textContent = msg;
   statusEl.className = `status ${type} show`;
-  statusDot.className = `hd-dot ${type === 'success' ? 'ok' : 'err'}`;
   clearTimeout(statusEl._t);
   statusEl._t = setTimeout(() => {
     statusEl.classList.remove('show');
     setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'status'; }, 300);
-    statusDot.className = 'hd-dot';
   }, 2500);
 }
 
-// ── Load saved settings ──
-chrome.storage.sync.get(SYNC_KEYS, async data => {
+// ── Bootstrap ──
+chrome.storage.local.get(['userProfile'], local => {
+  userProfileEl.value = local.userProfile || '';
+});
+
+chrome.storage.sync.get(ALL_KEYS, async data => {
   const provider = data.provider || 'claude';
-  providerInput.value = provider;
-  apiKeyEl.value      = data[apiKeyName(provider)] || '';
-  ollamaUrlEl.value   = data.ollamaBaseUrl || 'http://localhost:11434';
+  providerInput.value     = provider;
+  apiKeyEl.value          = data[apiKeyName(provider)] || '';
+  ollamaUrlEl.value       = data.ollamaBaseUrl || 'http://localhost:11434';
+  fillFormToggle.checked  = !!data.fillFormEnabled;
 
   setActiveTab(provider);
   applyProvider(provider, data.model);

@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <title>Aide</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Syne+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Syne+Mono&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="shell">
 
@@ -25,10 +28,10 @@
     <section class="section">
       <div class="lbl">PROVIDER</div>
       <div class="tabs" role="group" aria-label="AI provider">
-        <button class="tab" data-value="claude"  type="button">Claude</button>
-        <button class="tab" data-value="openai"  type="button">OpenAI</button>
-        <button class="tab" data-value="gemini"  type="button">Gemini</button>
-        <button class="tab" data-value="ollama"  type="button">Ollama</button>
+        <button class="tab" data-value="claude" type="button">Claude</button>
+        <button class="tab" data-value="openai" type="button">OpenAI</button>
+        <button class="tab" data-value="gemini" type="button">Gemini</button>
+        <button class="tab" data-value="ollama" type="button">Ollama</button>
       </div>
       <input type="hidden" id="provider" value="claude">
     </section>
@@ -39,8 +42,9 @@
         <input type="password" id="apiKey" class="field" placeholder="sk-···" autocomplete="off" spellcheck="false">
         <button id="toggleKey" class="glyph-btn" type="button" aria-label="Toggle key visibility">
           <svg id="eyeIcon" width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7.5 3C4.5 3 2 7.5 2 7.5S4.5 12 7.5 12 13 7.5 13 7.5 10.5 3 7.5 3Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-            <circle cx="7.5" cy="7.5" r="1.8" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M7.5 3C4.5 3 2 7.5 2 7.5S4.5 12 7.5 12 13 7.5 13 7.5 10.5 3 7.5 3Z" stroke="currentColor"
+              stroke-width="1.2" stroke-linejoin="round" />
+            <circle cx="7.5" cy="7.5" r="1.8" stroke="currentColor" stroke-width="1.2" />
           </svg>
         </button>
       </div>
@@ -60,41 +64,28 @@
         <select id="model" class="field sel"></select>
         <span class="sel-caret" aria-hidden="true">▾</span>
       </div>
-      <p id="ollamaHint" class="hint hidden">Make sure Ollama is running locally</p>
-    </section>
-
-    <section class="section">
-      <div class="lbl">PROFILE</div>
-      <textarea id="userProfile" class="field bare ta" rows="6" placeholder="Name: Jane Doe&#10;Email: jane@example.com&#10;Phone: +1 555 0100&#10;Address: 123 Main St, ..." spellcheck="false"></textarea>
-      <p class="hint">Stored on this device. Used only for form-fills.</p>
-    </section>
-
-    <section class="section">
-      <label class="toggle-row" for="fillFormEnabled">
-        <span class="toggle-text">
-          <span class="lbl">FILL ENTIRE FORM</span>
-          <span class="hint">Show "Fill entire form" button on field menus.</span>
-        </span>
-        <span class="toggle">
-          <input type="checkbox" id="fillFormEnabled">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </span>
-      </label>
     </section>
 
     <button id="save" class="save-btn" type="button">
-      <span>SAVE SETTINGS</span>
+      <span>SAVE</span>
       <span class="save-arr">→</span>
     </button>
 
-    <button id="openHistory" class="ghost-btn" type="button">
-      <span>VIEW HISTORY</span>
-      <span class="save-arr">↗</span>
-    </button>
+    <div class="ghost-row">
+      <button id="openSettings" class="ghost-btn" type="button">
+        <span>MORE SETTINGS</span>
+        <span class="save-arr">↗</span>
+      </button>
+      <button id="openHistory" class="ghost-btn" type="button">
+        <span>HISTORY</span>
+        <span class="save-arr">↗</span>
+      </button>
+    </div>
 
     <div id="status" class="status" aria-live="polite"></div>
 
   </div>
   <script src="popup.js"></script>
 </body>
+
 </html>
