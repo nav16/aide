@@ -19,11 +19,16 @@ export const MAX_TOKENS = { word: 256, explain: 512, followup: 384 };
 // Letting the provider know the real budget lets it plan generation and,
 // crucially, lets it terminate sooner once it has enough — meaningful
 // latency win on short selections.
+//
+// `word` is excluded from scaling: its output is a structured JSON object
+// (pos + definition + example) where short input ≠ short output. A 5-letter
+// term still needs ~80-150 output tokens for a usable definition, plus
+// JSON-shape overhead on top. Scaling by input length here was truncating
+// `definition` mid-string and leaving the popup showing just the word + pos.
 export function tokensForExplain(kind, text) {
+  if (kind === 'word') return MAX_TOKENS.word;
   const len = (text || '').length;
   const ceil = MAX_TOKENS[kind] || MAX_TOKENS.explain;
-  // Floor covers structured-output overhead (JSON braces, fence preambles
-  // some providers emit before the body) so we never starve the response.
   const floor = kind === 'followup' ? 128 : 96;
   return Math.min(ceil, floor + Math.ceil(len / 3));
 }

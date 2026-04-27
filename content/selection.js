@@ -38,15 +38,10 @@
     // Abort any explain/followup still in flight. Without this, dismissing
     // (Esc, click-outside, selection collapse) keeps the backend call
     // running — the response is dropped on arrival, but the model bill and
-    // request slot are already spent.
-    if (A.lastSentReqId !== null) {
-      chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: A.lastSentReqId });
-      A.lastSentReqId = null;
-    }
-    if (A.followupReqId !== null) {
-      chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: A.followupReqId });
-      A.followupReqId = null;
-    }
+    // request slot are already spent. Stream cancel disconnects the port,
+    // which triggers the SW-side AbortController.
+    if (A.lastStream)     { try { A.lastStream.cancel();     } catch {} A.lastStream = null; }
+    if (A.followupStream) { try { A.followupStream.cancel(); } catch {} A.followupStream = null; }
   };
 
   // ---- Helpers ----
@@ -258,12 +253,25 @@
   function positionSelPopup(range) {
     const r = range.getBoundingClientRect();
     const popW = 280;
-    const popH = selPopup.offsetHeight || 120;
+    // Use a fixed estimate of the popup's eventual height (header + body
+    // capped at 50vh + followup) instead of selPopup.offsetHeight. Real
+    // height grows from ~30px (placeholder "···") to up to ~460px as deltas
+    // stream in; measuring after the fact would jump the popup mid-read.
+    // Estimating the worst case keeps placement stable for the whole stream.
+    const estimatedH = Math.min(window.innerHeight * 0.5 + 80, 460);
     let left = r.left + (r.width / 2) - (popW / 2);
     if (left < 6) left = 6;
     if (left + popW > window.innerWidth - 6) left = window.innerWidth - popW - 6;
-    let top = r.top - popH - 10;
-    if (top < 6) top = r.bottom + 10;
+    // Default below the selection so content streams away from the user's
+    // reading line. Flip above only when there's noticeably more room there.
+    const spaceBelow = window.innerHeight - r.bottom - 10;
+    const spaceAbove = r.top - 10;
+    let top;
+    if (spaceBelow >= estimatedH || spaceBelow >= spaceAbove) {
+      top = r.bottom + 10;
+    } else {
+      top = Math.max(6, r.top - estimatedH - 10);
+    }
     selPopup.style.left = `${left}px`;
     selPopup.style.top  = `${top}px`;
   }
@@ -336,9 +344,7 @@
     A.selReqId++;
     const myReqId = A.selReqId;
 
-    if (A.lastSentReqId !== null) {
-      chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: A.lastSentReqId });
-    }
+    if (A.lastStream) { try { A.lastStream.cancel(); } catch {} A.lastStream = null; }
 
     typeEl.textContent = isWord ? 'DEFINE' : 'EXPLAIN';
     bodyEl.textContent = '···';
@@ -363,7 +369,6 @@
     // Skip for explain — the selection itself already supplies its context.
     const surrounding = kind === 'word' ? extractSurrounding(range, text) : '';
     const explainPayload = {
-      action: 'explain',
       kind,
       text,
       context: surrounding ? { surrounding } : undefined,
@@ -375,40 +380,56 @@
       ollamaBaseUrl: settings.ollamaBaseUrl
     };
 
-    A.lastSentReqId = myReqId;
-    chrome.runtime.sendMessage({ ...explainPayload, reqId: myReqId }, (response) => {
-      if (myReqId === A.lastSentReqId) A.lastSentReqId = null;
-      if (myReqId !== A.selReqId) return; // superseded by newer selection
-      if (selPopup.style.display === 'none') return;
-      bodyEl.className = 'aif-sel-body';
-      if (chrome.runtime.lastError || !response?.success) {
-        bodyEl.textContent = response?.error || 'Failed to fetch.';
-        bodyEl.className = 'aif-sel-body aif-sel-error';
-      } else {
-        let displayText = response.text;
-        let raw = null;
-        if (kind === 'word') {
-          const obj = extractJson(response.text);
-          if (obj) {
-            raw = response.text;
-            // Plain-text version for clipboard / followup transcript: humans
-            // and the LLM both prefer prose over JSON when chaining.
-            displayText = [
-              obj.pos        ? `(${obj.pos})` : '',
-              obj.definition || obj.def || '',
-              (obj.example || obj.usage) ? `Ex: ${obj.example || obj.usage}` : ''
-            ].filter(Boolean).join(' ');
-          }
+    // word kind returns JSON via the structured-output path — partial JSON
+    // is useless to paint, so we suppress live deltas and render once at done.
+    const livePaint = kind !== 'word'
+      ? (full) => {
+          if (myReqId !== A.selReqId) return;
+          if (selPopup.style.display === 'none') return;
+          bodyEl.className = 'aif-sel-body';
+          bodyEl.innerHTML = renderMarkdown(full);
         }
-        // Seed views with the initial answer. renderView paints body + nav.
-        const view = { kind, a: displayText };
-        if (kind === 'word' && raw) { view.raw = raw; view.word = text; }
-        writeViews([view]);
-        renderView(0);
-        followupForm.classList.remove('hidden');
+      : null;
+
+    const stream = A.streamExplain(explainPayload, livePaint);
+    A.lastStream = stream;
+    const response = await stream;
+    if (A.lastStream === stream) A.lastStream = null;
+    if (myReqId !== A.selReqId) return; // superseded by newer selection
+    if (response.cancelled) return;
+    if (selPopup.style.display === 'none') return;
+
+    bodyEl.className = 'aif-sel-body';
+    if (!response.success) {
+      bodyEl.textContent = response.error || 'Failed to fetch.';
+      bodyEl.className = 'aif-sel-body aif-sel-error';
+    } else {
+      let displayText = response.text;
+      let raw = null;
+      if (kind === 'word') {
+        const obj = extractJson(response.text);
+        if (obj) {
+          raw = response.text;
+          // Plain-text version for clipboard / followup transcript: humans
+          // and the LLM both prefer prose over JSON when chaining.
+          displayText = [
+            obj.pos        ? `(${obj.pos})` : '',
+            obj.definition || obj.def || '',
+            (obj.example || obj.usage) ? `Ex: ${obj.example || obj.usage}` : ''
+          ].filter(Boolean).join(' ');
+        }
       }
-      positionSelPopup(range);
-    });
+      // Seed views with the initial answer. renderView paints body + nav.
+      const view = { kind, a: displayText };
+      if (kind === 'word' && raw) { view.raw = raw; view.word = text; }
+      writeViews([view]);
+      renderView(0);
+      followupForm.classList.remove('hidden');
+    }
+    // No re-position here: placement was decided once at start using a
+    // worst-case height estimate, and body now scrolls internally instead
+    // of growing the popup. Repositioning would jump the popup just as the
+    // user finished reading.
   }
   A.checkSelection = checkSelection;
 
@@ -461,15 +482,9 @@
     followupInput.disabled = true;
 
     // Cancel any prior follow-up still in flight.
-    if (A.followupReqId !== null) {
-      chrome.runtime.sendMessage({ action: 'cancelExplain', reqId: A.followupReqId });
-    }
-    const myReqId = ++A.selReqId;
-    A.followupReqId = myReqId;
+    if (A.followupStream) { try { A.followupStream.cancel(); } catch {} A.followupStream = null; }
 
-    chrome.runtime.sendMessage({
-      action: 'explain',
-      reqId: myReqId,
+    const stream = A.streamExplain({
       kind: 'followup',
       text: question,
       context: { originalText, prior: lastAssistant, turns },
@@ -479,26 +494,32 @@
       apiKey,
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl
-    }, (response) => {
-      if (myReqId !== A.followupReqId) return; // superseded
-      A.followupReqId = null;
-      followupInput.disabled = false;
+    }, (full) => {
+      if (A.followupStream !== stream) return; // superseded
       if (selPopup.style.display === 'none') return;
       bodyEl.className = 'aif-sel-body';
-      if (chrome.runtime.lastError || !response?.success) {
-        bodyEl.textContent = response?.error || 'Failed to fetch.';
-        bodyEl.className = 'aif-sel-body aif-sel-error';
-      } else {
-        // Append the new Q/A as another view; jump to it. Past views stay
-        // navigable via prev/next.
-        const updated = readViews();
-        updated.push({ kind: 'followup', q: question, a: response.text });
-        writeViews(updated);
-        renderView(updated.length - 1);
-        followupInput.value = '';
-        followupInput.focus();
-      }
+      bodyEl.innerHTML = renderMarkdown(full);
     });
+    A.followupStream = stream;
+    const response = await stream;
+    if (A.followupStream === stream) A.followupStream = null;
+    followupInput.disabled = false;
+    if (response.cancelled) return;
+    if (selPopup.style.display === 'none') return;
+    bodyEl.className = 'aif-sel-body';
+    if (!response.success) {
+      bodyEl.textContent = response.error || 'Failed to fetch.';
+      bodyEl.className = 'aif-sel-body aif-sel-error';
+    } else {
+      // Append the new Q/A as another view; jump to it. Past views stay
+      // navigable via prev/next.
+      const updated = readViews();
+      updated.push({ kind: 'followup', q: question, a: response.text });
+      writeViews(updated);
+      renderView(updated.length - 1);
+      followupInput.value = '';
+      followupInput.focus();
+    }
   }
 
   // ---- Wiring ----

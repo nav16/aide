@@ -1,6 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
+import { readStreamLines } from './streaming.js';
 
-export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal, timeoutMs }) {
+export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
   // Append profile to system. Ollama has no prompt-cache concept like Anthropic,
   // so a single combined system string is simplest. Skipped when empty.
@@ -18,13 +19,19 @@ export async function ollama({ baseUrl, model, user, system, userProfile, maxTok
     ...(temperature != null ? { temperature }            : {}),
     ...(stop?.length        ? { stop }                   : {})
   };
+
+  // Stream when an onDelta hook is provided and we're not constraining to a
+  // schema. Ollama's NDJSON stream is one JSON object per line with a final
+  // {done:true} marker; readStreamLines handles the line-splitting.
+  const stream = !!onDelta && !jsonSchema;
+
   const res = await fetchWithRetry(`${base}/api/chat`, {
     method: 'POST',
     signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
-      stream: false,
+      stream,
       keep_alive: '10m',
       // Ollama supports two json modes: format:'json' (free-form JSON) and
       // format:<schema> (constrained — requires recent Ollama). The schema
@@ -43,6 +50,19 @@ export async function ollama({ baseUrl, model, user, system, userProfile, maxTok
   if (!res.ok) {
     throw new Error(`Ollama error ${res.status}. Is Ollama running at ${base}?`);
   }
+
+  if (stream) {
+    let acc = '';
+    await readStreamLines(res, line => {
+      try {
+        const obj = JSON.parse(line);
+        const delta = obj.message?.content;
+        if (delta) { acc += delta; onDelta(delta); }
+      } catch {}
+    });
+    return acc.trim();
+  }
+
   const data = await res.json();
   return data.message.content.trim();
 }

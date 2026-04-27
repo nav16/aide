@@ -158,7 +158,7 @@ async function handleFillForm(req, signal) {
   return cleanFillFormOutput(raw);
 }
 
-async function handleExplain(req, signal) {
+async function handleExplain(req, signal, onDelta) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
   const { system, user } = explainPrompts(req.kind, req.text, req.pageTitle, req.context, req.hostname);
@@ -175,7 +175,49 @@ async function handleExplain(req, signal) {
     // its own JSON-mode mechanism (json_schema / responseSchema / tool-use /
     // format:'json'). Returns a JSON string that the popup parses as before.
     jsonSchema:  req.kind === 'word' ? { name: 'define', schema: DEFINE_SCHEMA } : null,
+    // Live-streaming for prose answers. Providers ignore onDelta when
+    // jsonSchema is set so define stays buffered (partial JSON is useless
+    // to paint).
+    onDelta,
     timeoutMs:   60000
   }, signal);
   return req.kind === 'word' ? cleanDefineOutput(raw) : raw;
 }
+
+// Streaming transport for explain/word/followup. Each call gets its own
+// long-lived port so the SW can push delta + done frames back without
+// keeping a sendResponse callback alive. Disconnecting the port from the
+// content side aborts the in-flight provider call.
+chrome.runtime.onConnect.addListener(port => {
+  if (port.name !== 'aide-stream') return;
+  const controller = new AbortController();
+  let started = false;
+
+  port.onMessage.addListener(async msg => {
+    if (msg?.action === 'cancel') { controller.abort(); return; }
+    if (started) return;          // ignore extra start frames per port
+    started = true;
+    if (msg?.action !== 'explain') {
+      try { port.postMessage({ type: 'error', error: 'Unknown stream action.' }); } catch {}
+      try { port.disconnect(); } catch {}
+      return;
+    }
+    const onDelta = (text) => {
+      try { port.postMessage({ type: 'delta', text }); } catch {}
+    };
+    try {
+      const text = await handleExplain(msg, controller.signal, onDelta);
+      try { port.postMessage({ type: 'done', text }); } catch {}
+      Promise.resolve()
+        .then(() => appendHistory(explainRecord(msg, text)))
+        .catch(() => {});
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      try { port.postMessage({ type: 'error', error: err.message }); } catch {}
+    } finally {
+      try { port.disconnect(); } catch {}
+    }
+  });
+
+  port.onDisconnect.addListener(() => { controller.abort(); });
+});

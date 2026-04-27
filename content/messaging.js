@@ -29,6 +29,58 @@
   A.genReqCounter   = 0;
   A.currentGenReqId = null;
   A.selReqId        = 0;
-  A.lastSentReqId   = null;
-  A.followupReqId   = null;
+
+  // Live-streaming explain transport. Opens a port per call; emits cumulative
+  // text via onDelta(full, chunk) as content_block_delta frames arrive, then
+  // resolves with { success, text }. The returned promise carries .cancel()
+  // which aborts the in-flight provider call by disconnecting the port —
+  // server-side onDisconnect aborts the AbortController.
+  A.streamExplain = function (payload, onDelta) {
+    const port = chrome.runtime.connect({ name: 'aide-stream' });
+    let acc = '';
+    let resolved = false;
+    let resolveFn;
+    const promise = new Promise(resolve => {
+      resolveFn = resolve;
+      port.onMessage.addListener(msg => {
+        if (!msg) return;
+        if (msg.type === 'delta') {
+          acc += msg.text || '';
+          try { onDelta?.(acc, msg.text || ''); } catch {}
+        } else if (msg.type === 'done') {
+          if (resolved) return;
+          resolved = true;
+          resolve({ success: true, text: msg.text != null ? msg.text : acc });
+        } else if (msg.type === 'error') {
+          if (resolved) return;
+          resolved = true;
+          resolve({ success: false, error: msg.error || 'Stream failed.' });
+        }
+      });
+      port.onDisconnect.addListener(() => {
+        if (resolved) return;
+        resolved = true;
+        resolve({ success: false, error: chrome.runtime.lastError?.message || 'Disconnected.' });
+      });
+    });
+    promise.cancel = () => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      try { port.postMessage({ action: 'cancel' }); } catch {}
+      try { port.disconnect(); } catch {}
+      resolveFn({ success: false, error: 'Cancelled.', cancelled: true });
+    };
+    try {
+      port.postMessage({ action: 'explain', ...payload });
+    } catch (e) {
+      // Service worker dead at connect time — surface as an error.
+      if (!resolved) {
+        resolved = true;
+        resolveFn({ success: false, error: e.message || 'Failed to start stream.' });
+      }
+    }
+    return promise;
+  };
 })();

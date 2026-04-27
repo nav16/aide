@@ -452,6 +452,18 @@
   line-height: 1.55;
   color: #d0d0d0;
   word-break: break-word;
+  /* Cap height so streaming deltas overflow internally instead of growing
+     the popup — prevents the popup from drifting / flipping placement
+     mid-stream, which makes the answer hard to read while it's filling. */
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.aif-sel-body::-webkit-scrollbar { width: 6px; }
+.aif-sel-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 3px;
 }
 
 .aif-sel-body strong { color: #ebebeb; font-weight: 700; }

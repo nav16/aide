@@ -1,7 +1,8 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
+import { readStreamLines } from './streaming.js';
 
-export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal, timeoutMs }) {
+export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
   // Gemini's implicit caching keys off the request prefix; keeping system
   // stable across calls + appending the profile at the tail preserves the
   // cacheable prefix and only the profile portion changes per-user.
@@ -19,21 +20,45 @@ export async function gemini({ apiKey, model, user, system, userProfile, maxToke
     generationConfig.responseMimeType = 'application/json';
     generationConfig.responseSchema   = sanitizeSchemaForGemini(jsonSchema.schema);
   }
-  const res = await fetchWithRetry(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      signal,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: sys }] },
-        contents: [{ parts: [{ text: user }] }],
-        ...(Object.keys(generationConfig).length ? { generationConfig } : {})
-      })
-    },
-    timeoutMs
-  );
+
+  // Stream when caller asked for deltas and we're not in JSON-mode (partial
+  // JSON would render badly mid-stream).
+  const stream = !!onDelta && !jsonSchema;
+  const path = stream ? 'streamGenerateContent' : 'generateContent';
+  // alt=sse switches the streaming response from a JSON array of chunks to
+  // a proper Server-Sent Events stream — same line-format the other two
+  // cloud providers emit, so readStreamLines covers it cleanly.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:${path}?${stream ? 'alt=sse&' : ''}key=${apiKey}`;
+
+  const res = await fetchWithRetry(url, {
+    method: 'POST',
+    signal,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: sys }] },
+      contents: [{ parts: [{ text: user }] }],
+      ...(Object.keys(generationConfig).length ? { generationConfig } : {})
+    })
+  }, timeoutMs);
   if (!res.ok) throw await extractError(res, 'Gemini API');
+
+  if (stream) {
+    let acc = '';
+    await readStreamLines(res, line => {
+      if (!line.startsWith('data:')) return;
+      const payload = line.slice(5).trim();
+      if (!payload) return;
+      try {
+        const obj = JSON.parse(payload);
+        const parts = obj.candidates?.[0]?.content?.parts || [];
+        for (const p of parts) {
+          if (p.text) { acc += p.text; onDelta(p.text); }
+        }
+      } catch {}
+    });
+    return acc.trim();
+  }
+
   const data = await res.json();
   // Gemini can split a single response across multiple parts (especially
   // with responseMimeType=json + thinking models that emit a prose lead-in
