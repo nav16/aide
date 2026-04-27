@@ -19,7 +19,16 @@
     return (e.composedPath && e.composedPath()[0]) || e.target;
   }
 
+  // Events from inside our injected shadow root retarget to the shadow host.
+  // Detect via path — if our host is in the propagation chain, the event came
+  // from our own UI and we ignore it (otherwise focusing our preview <input>
+  // would be treated as the user focusing a new page field).
+  function fromOurUI(e) {
+    return A.shadowHost && e.composedPath().includes(A.shadowHost);
+  }
+
   document.addEventListener('focusin', (e) => {
+    if (fromOurUI(e)) return;
     const target = realTarget(e);
     if (!target || target.nodeType !== 1) return;
     if (!A.attachedFields.has(target)) {
@@ -33,6 +42,7 @@
   }, true);
 
   document.addEventListener('focusout', (e) => {
+    if (fromOurUI(e)) return;
     const target = realTarget(e);
     if (!target || !A.attachedFields.has(target)) return;
     A.onBlur({ target });
@@ -49,12 +59,16 @@
 
   document.addEventListener('mousedown', (e) => {
     if (A.dropdown.style.display === 'none') return;
-    if (!A.dropdown.contains(e.target) && e.target !== A.btn) A.hideDropdown();
+    // composedPath crosses the shadow boundary — without it, e.target is the
+    // retargeted shadow host and `dropdown.contains(target)` is always false,
+    // so a click *inside* the dropdown would dismiss it.
+    const path = e.composedPath();
+    if (!path.includes(A.dropdown) && !path.includes(A.btn)) A.hideDropdown();
   });
 
   document.addEventListener('mousedown', (e) => {
     if (A.selPopup.style.display === 'none') return;
-    if (!A.selPopup.contains(e.target)) {
+    if (!e.composedPath().includes(A.selPopup)) {
       // only dismiss immediately if not starting a new selection (single click, not drag)
       setTimeout(() => {
         const sel = window.getSelection();

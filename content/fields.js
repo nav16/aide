@@ -511,9 +511,12 @@
 
   A.onBlur = function () {
     A.hideBtnTimer = setTimeout(() => {
-      if (document.activeElement !== A.btn && !A.dropdown.contains(document.activeElement)) {
-        A.hideBtn();
-      }
+      // activeElement at document scope retargets to the shadow host when the
+      // user is focusing inside our injected UI. shadowRoot.activeElement
+      // reveals the actual focused element so we don't hide the button while
+      // the user is typing in our dropdown.
+      const ae = A.shadowRoot?.activeElement || document.activeElement;
+      if (ae !== A.btn && !A.dropdown.contains(ae)) A.hideBtn();
     }, 200);
   };
 

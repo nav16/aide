@@ -10,7 +10,7 @@
   btn.setAttribute('aria-label', 'AI Fill');
   btn.textContent = '✨';
   btn.style.display = 'none';
-  document.body.appendChild(btn);
+  A.uiRoot.appendChild(btn);
   A.btn = btn;
 
   const dropdown = document.createElement('div');
@@ -34,7 +34,7 @@
     </div>
   `;
   dropdown.style.display = 'none';
-  document.body.appendChild(dropdown);
+  A.uiRoot.appendChild(dropdown);
   A.dropdown = dropdown;
 
   // ---- State owned by the dropdown flow ----
@@ -426,7 +426,7 @@
       <button class="aif-ff-undo" type="button">Undo</button>
       <button class="aif-ff-toast-close" type="button" aria-label="Dismiss">✕</button>
     `;
-    document.body.appendChild(undoToast);
+    A.uiRoot.appendChild(undoToast);
 
     const dismiss = () => {
       if (!undoToast) return;

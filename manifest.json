@@ -35,9 +35,14 @@
         "content/selection.js",
         "content/main.js"
       ],
-      "css": ["content.css"],
       "run_at": "document_idle",
       "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content.css"],
+      "matches": ["<all_urls>"]
     }
   ]
 }
