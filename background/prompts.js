@@ -191,6 +191,7 @@ export function explainPrompts(kind, text, pageTitle, context, hostname) {
     };
   }
   if (kind === 'word') {
+    const surrounding = (context?.surrounding || '').trim();
     return {
       system: [
         'You are a concise dictionary.',
@@ -201,10 +202,13 @@ export function explainPrompts(kind, text, pageTitle, context, hostname) {
         '- The VERY LAST character of your response MUST be `}`. No trailing commentary.',
         '- No markdown, no code fences, no backticks.',
         '- Output must parse as JSON. Use double quotes. Escape internal quotes.',
-        '- If the input has multiple senses, pick the one that fits the page context best, otherwise the most common one.',
+        '- If the input has multiple senses, use the surrounding text (when provided) to pick the sense that fits. Fall back to page context (domain + title), then to the most common sense.',
+        '- The example sentence must illustrate the chosen sense. Do not echo the surrounding text.',
         '- Write the definition and example in the same language as the input word.'
       ].join('\n'),
-      user: `Word: "${text}"\n${pageLine}`
+      user: surrounding
+        ? `Word: "${text}"\n${pageLine}\nSurrounding text: "${surrounding}"`
+        : `Word: "${text}"\n${pageLine}`
     };
   }
   return {
