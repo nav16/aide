@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal, timeoutMs }) {
   // Gemini's implicit caching keys off the request prefix; keeping system
   // stable across calls + appending the profile at the tail preserves the
   // cacheable prefix and only the profile portion changes per-user.
@@ -30,7 +30,8 @@ export async function gemini({ apiKey, model, user, system, userProfile, maxToke
         contents: [{ parts: [{ text: user }] }],
         ...(Object.keys(generationConfig).length ? { generationConfig } : {})
       })
-    }
+    },
+    timeoutMs
   );
   if (!res.ok) throw await extractError(res, 'Gemini API');
   const data = await res.json();

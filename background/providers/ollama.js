@@ -1,6 +1,6 @@
 import { fetchWithRetry } from '../retry.js';
 
-export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal, timeoutMs }) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
   // Append profile to system. Ollama has no prompt-cache concept like Anthropic,
   // so a single combined system string is simplest. Skipped when empty.
@@ -36,7 +36,7 @@ export async function ollama({ baseUrl, model, user, system, userProfile, maxTok
         { role: 'user',   content: user }
       ]
     })
-  });
+  }, timeoutMs);
   if (res.status === 403) {
     throw new Error('Ollama blocked (403). Restart with OLLAMA_ORIGINS="*" — e.g. OLLAMA_ORIGINS="*" ollama serve');
   }

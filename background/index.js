@@ -60,7 +60,8 @@ async function handleGenerate(req, signal) {
     userProfile: req.userProfile,
     maxTokens:   tokensForField(req.fieldContext),
     temperature: TEMPERATURE.form,
-    stop:        stopForField(req.fieldContext)
+    stop:        stopForField(req.fieldContext),
+    timeoutMs:   60000
   }, signal);
   return cleanFormOutput(raw, req.fieldContext);
 }
@@ -83,7 +84,8 @@ async function handleFillForm(req, signal) {
     userProfile: req.userProfile,
     maxTokens,
     temperature: TEMPERATURE.form,
-    jsonSchema: { name: 'fillForm', schema: FILL_FORM_SCHEMA }
+    jsonSchema: { name: 'fillForm', schema: FILL_FORM_SCHEMA },
+    timeoutMs:   90000
   }, signal);
   return cleanFillFormOutput(raw);
 }
@@ -104,7 +106,8 @@ async function handleExplain(req, signal) {
     // Native structured-output mode for define. Each provider wires this to
     // its own JSON-mode mechanism (json_schema / responseSchema / tool-use /
     // format:'json'). Returns a JSON string that the popup parses as before.
-    jsonSchema:  req.kind === 'word' ? { name: 'define', schema: DEFINE_SCHEMA } : null
+    jsonSchema:  req.kind === 'word' ? { name: 'define', schema: DEFINE_SCHEMA } : null,
+    timeoutMs:   60000
   }, signal);
   return req.kind === 'word' ? cleanDefineOutput(raw) : raw;
 }

@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function claude({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function claude({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal, timeoutMs }) {
   // Claude has no JSON-mode flag; tool-use with tool_choice forces the model
   // to emit a tool_use block whose `input` is a JSON object matching the
   // declared schema. We extract that and stringify so callers see plain JSON.
@@ -55,7 +55,7 @@ export async function claude({ apiKey, model, user, system, userProfile, maxToke
       })(),
       messages: [{ role: 'user', content: user }]
     })
-  });
+  }, timeoutMs);
   if (!res.ok) throw await extractError(res, 'Claude API');
   const data = await res.json();
   if (jsonSchema) {

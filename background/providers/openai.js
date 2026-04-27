@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../retry.js';
 import { extractError } from '../http.js';
 
-export async function openai({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal }) {
+export async function openai({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, signal, timeoutMs }) {
   // OpenAI does prefix-cache automatically (>1024 tokens), so keeping system
   // stable across calls maximizes hit rate. Profile appended at the tail
   // means the base prefix stays cacheable; profile edits only invalidate
@@ -35,7 +35,7 @@ export async function openai({ apiKey, model, user, system, userProfile, maxToke
         { role: 'user',   content: user }
       ]
     })
-  });
+  }, timeoutMs);
   if (!res.ok) throw await extractError(res, 'OpenAI API');
   const data = await res.json();
   return data.choices[0].message.content.trim();
