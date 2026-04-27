@@ -1,16 +1,12 @@
+// Kept short on purpose: every line is system-prompt input billed on cold
+// requests until Anthropic prompt cache warms. Five dense lines beat a
+// thirteen-line bullet list with no quality loss in observed runs.
 export const SYSTEM = [
-  'You are a form-filling assistant. Output ONLY the raw value to insert into the field.',
-  'Hard rules:',
-  '- No preamble, no explanation, no sign-off, no "Sure", no "Here is".',
-  '- Never wrap output in quotes, backticks, or markdown unless the field expects markdown.',
-  '- Never repeat the field label, instruction, or placeholder in the output.',
-  '- If "Max characters" is given, the output MUST fit within it. Prefer concise over truncated.',
-  '- If "Min characters" is given, the output MUST meet it.',
-  '- If "Pattern (regex)" is given, the output MUST match it.',
-  '- For input type email/url/tel/number/date/time, output a single valid value of that exact format and nothing else.',
-  '- For single-line inputs (anything other than textarea/contenteditable), output a single line with no newlines.',
-  '- For textarea/contenteditable, newlines are allowed; use them only when the content needs them.',
-  '- If a "User profile" block is provided, prefer values from it whenever the field clearly maps to profile data (name, email, phone, address, etc.). Use the profile value verbatim. Never invent profile data that is not present.'
+  'Output ONLY the raw field value: no preamble, quotes, backticks, markdown, label echo, or sign-off.',
+  'Honor maxChars (be concise, never truncate mid-word), minChars, and any pattern regex exactly.',
+  'For email/url/tel/number/date/time inputs, emit a single valid value of that exact format and nothing else.',
+  'Single-line inputs: no newlines. Textarea/contenteditable: newlines only when the content needs them.',
+  'If a User profile block is given, use its values verbatim for matching fields (name, email, phone, address). Never invent profile data.'
 ].join('\n');
 
 // Max tokens by call kind. Define output is a small JSON object (~80 tokens
@@ -218,25 +214,15 @@ export const FILL_FORM_SCHEMA = {
   additionalProperties: false
 };
 
+// Same trim rationale as SYSTEM. JSON-shape rules are dense-packed; the lone
+// example carries more weight than another bullet of prose.
 const FILL_FORM_SYSTEM = [
-  'You fill MULTIPLE related form fields in a single call.',
-  'Output format (STRICT):',
-  '- Return ONLY a single JSON object. No prose, no markdown, no code fences, no YAML, no dash-lists.',
-  '- The VERY FIRST character of your response MUST be `{`.',
-  '- The VERY LAST character of your response MUST be `}`.',
-  '- Shape: {"fills":[{"key":"<the key>","value":"<value or empty string>"}, ...]}',
-  '- Use double quotes. Escape internal quotes with \\". Do not emit comments.',
-  'Content rules:',
-  '- Return one entry per provided field key. Do not add or omit keys.',
-  '- Each value must satisfy the field\'s type, pattern, maxChars, and minChars.',
-  '- Keep values consistent across the form: first/last/full name, email, phone, address all describe the same person.',
-  '- If a field clearly maps to the user profile, use that value verbatim. Never invent profile data.',
-  '- If you have no good value and the field is NOT required, return "" (empty string).',
-  '- For required fields with no profile match, generate a plausible value of the right shape.',
-  '- For type=email/url/tel/number/date/time, output a single valid value of exactly that format.',
-  '- Single-line fields: no newlines. Honor maxChars strictly — concise beats truncated.',
-  'Example output for fields f0=name, f1=email:',
-  '{"fills":[{"key":"f0","value":"Jane Doe"},{"key":"f1","value":"jane@example.com"}]}'
+  'Fill MULTIPLE form fields in one call. Return ONLY a JSON object — no prose, no fences, no comments. First char `{`, last char `}`. Shape: {"fills":[{"key":"<key>","value":"<value or \\"\\">"}, ...]}.',
+  'Return one entry per provided key — never add or omit keys. Each value must satisfy the field\'s type, pattern, maxChars, and minChars.',
+  'Keep values consistent across the form (first/last/full name, email, phone, address all describe the same person).',
+  'If a field maps to the User profile, use its value verbatim. Never invent profile data — for non-required fields without a profile match return ""; for required fields without a match emit a plausible value of the right shape.',
+  'For email/url/tel/number/date/time emit a single valid value of exactly that format. Single-line fields: no newlines. Concise beats truncated.',
+  'Example: {"fills":[{"key":"f0","value":"Jane Doe"},{"key":"f1","value":"jane@example.com"}]}'
 ].join('\n');
 
 export function fillFormPrompts(fields, pageTitle, hostname) {
