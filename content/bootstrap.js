@@ -23,8 +23,44 @@
   const host = document.createElement('div');
   host.id = 'aide-root';
   host.style.cssText = 'all: initial; display: contents;';
-  // documentElement so the host survives some SPAs that re-render <body>.
-  (document.documentElement || document.body).appendChild(host);
+  // React 18 hydration on some sites (job-boards.greenhouse.io, certain
+  // Next.js apps) strips children added under <html> before hydration runs,
+  // because the SSR HTML doesn't contain them. Mark the node so React's own
+  // "ignore extension-injected nodes" path leaves it alone, and watch for
+  // removal as a backstop.
+  host.setAttribute('data-extension', 'aide');
+
+  function mount() {
+    const parent = document.body || document.documentElement;
+    if (!parent || host.parentNode === parent) return;
+    parent.appendChild(host);
+  }
+  mount();
+
+  // If a re-render or hydration sweep removes our host, put it back. The
+  // shadow root and its contents are preserved across detach/re-attach since
+  // they live on the host element, not its parent. Observe both <html> (in
+  // case body is rebuilt) and <body> directly.
+  const reattachObserver = new MutationObserver(() => {
+    if (!host.isConnected) mount();
+  });
+  if (document.documentElement) {
+    reattachObserver.observe(document.documentElement, { childList: true });
+  }
+  // body may not exist yet at document_idle in odd setups; observe once it's
+  // there too. This is cheap — childList only, no subtree.
+  const bodyObserver = new MutationObserver(() => {
+    if (document.body) {
+      reattachObserver.observe(document.body, { childList: true });
+      mount();
+      bodyObserver.disconnect();
+    }
+  });
+  if (!document.body && document.documentElement) {
+    bodyObserver.observe(document.documentElement, { childList: true, subtree: true });
+  } else if (document.body) {
+    reattachObserver.observe(document.body, { childList: true });
+  }
 
   const root = host.attachShadow({ mode: 'open' });
 
