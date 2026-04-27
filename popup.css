@@ -1,17 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --bg:      #0b0b0d;
   --surface: #131316;
   --raised:  #1a1a1f;
-  --border:  #242429;
+  --border:  #2d2d34;
   --accent:  #e2ff5a;
-  --text:    #ebebeb;
-  --muted:   #3e3e48;
-  --dim:     #5c5c6e;
+  --text:    #f1f1f1;
+  --muted:   #6e6e7d;
+  --dim:     #9c9caa;
   --ok:      #3dffa0;
-  --fail:    #ff4f56;
-  --mono:    'Syne Mono', 'Courier New', monospace;
+  --fail:    #ff5a61;
+  /* Two mono roles: --mono-display for decorative (Syne Mono is single
+     weight 400 and reads thin at small sizes), --mono for legible labels. */
+  --mono-display: 'Syne Mono', ui-monospace, monospace;
+  --mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans:    'Syne', system-ui, sans-serif;
 }
 
@@ -19,9 +24,10 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13px;
-  width: 300px;
+  font-size: 14px;
+  width: 320px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* subtle noise grain */
@@ -70,18 +76,18 @@ body::before {
 .hd-name {
   font-family: var(--sans);
   font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: 0.12em;
   color: var(--text);
   line-height: 1;
 }
 
 .hd-sub {
-  font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 0.2em;
+  font-family: var(--mono-display);
+  font-size: 10px;
+  letter-spacing: 0.18em;
   color: var(--dim);
-  margin-top: 4px;
+  margin-top: 5px;
 }
 
 .hd-dot {
@@ -114,10 +120,12 @@ body::before {
 
 .lbl {
   font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: 0.22em;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   color: var(--dim);
-  margin-bottom: 7px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
 }
 
 .lbl-row {
@@ -141,9 +149,10 @@ body::before {
 
 .tab {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11.5px;
+  font-weight: 500;
   letter-spacing: 0.04em;
-  padding: 7px 0;
+  padding: 8px 0;
   border: none;
   border-radius: 3px;
   background: transparent;
@@ -176,15 +185,16 @@ body::before {
   width: 100%;
   background: transparent;
   border: none;
-  padding: 8px 10px;
+  padding: 9px 11px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--text);
   outline: none;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   border-radius: 5px;
 }
-.field::placeholder { color: var(--muted); }
+.field::placeholder { color: var(--muted); font-weight: 400; }
 
 .field.bare {
   background: var(--surface);
@@ -196,11 +206,12 @@ body::before {
 
 .field.ta {
   resize: vertical;
-  min-height: 92px;
-  line-height: 1.5;
-  padding: 8px 10px;
+  min-height: 100px;
+  line-height: 1.55;
+  padding: 9px 11px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
 .glyph-btn {
@@ -245,25 +256,29 @@ body::before {
 /* ── Misc ── */
 .text-btn {
   font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: 0.15em;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   color: var(--accent);
   background: transparent;
   border: none;
   cursor: pointer;
   padding: 0;
-  opacity: 0.7;
+  opacity: 0.85;
   transition: opacity 0.12s;
+  text-transform: uppercase;
 }
 .text-btn:hover { opacity: 1; }
-.text-btn:disabled { opacity: 0.25; cursor: default; }
+.text-btn:disabled { opacity: 0.3; cursor: default; }
 
 .hint {
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 11px;
+  font-weight: 400;
   color: var(--dim);
-  letter-spacing: 0.08em;
-  margin-top: 5px;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  margin-top: 6px;
 }
 
 /* ── Toggle ── */
@@ -325,16 +340,17 @@ body::before {
   color: #0b0b0d;
   border: none;
   border-radius: 5px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 8px;
   transition: background 0.15s, transform 0.1s;
   position: relative;
   overflow: hidden;
@@ -356,7 +372,7 @@ body::before {
 .save-btn:hover  { background: #ecff72; }
 .save-btn:active { transform: scale(0.985); }
 
-.save-arr { font-size: 15px; opacity: 0.6; }
+.save-arr { font-size: 15px; opacity: 0.7; }
 
 /* ── Ghost button (history) ── */
 .ghost-btn {
@@ -365,27 +381,34 @@ body::before {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 9px 14px;
+  padding: 11px 14px;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
-  transition: border-color 0.15s, color 0.15s;
+  margin-top: 10px;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.ghost-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ghost-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(226,255,90,0.04);
+}
 
 /* ── Status ── */
 .status {
   font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.12em;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-align: center;
-  min-height: 16px;
-  margin-top: 8px;
+  min-height: 18px;
+  margin-top: 10px;
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 0.25s, transform 0.25s;
