@@ -56,6 +56,62 @@
   A.currentGenReqId = null;
   A.selReqId        = 0;
 
+  // Drag-to-reposition for the dropdown / selection popup. The handle is
+  // typically the header strip; clicks on interactive descendants (close,
+  // copy, prev/next, inputs) still pass through unmolested. Position is
+  // applied via inline left/top, overriding whatever positionDropdown /
+  // positionSelPopup set initially. The drag is scoped to one popup session
+  // — the next openDropdown / new selection re-runs the auto-positioner,
+  // which is the right behavior (drag-position shouldn't sticky-pin across
+  // unrelated invocations).
+  //
+  // Document-level mousemove/mouseup with capture:true so a drag that strays
+  // outside the popup keeps tracking, and so page handlers can't swallow
+  // the events mid-drag (think contenteditable mousemove handlers).
+  A.makeDraggable = function (popupEl, handleEl) {
+    let dragging = null;
+
+    handleEl.addEventListener('mousedown', (e) => {
+      // Skip interactive children — the close/copy/nav buttons inside our
+      // headers, or any input/textarea a future header might hold.
+      if (e.target.closest('button, input, textarea, select, a')) return;
+      if (e.button !== 0) return; // primary button only
+      e.preventDefault();           // suppress text-selection on the header
+      const rect = popupEl.getBoundingClientRect();
+      // The selection popup may be bottom-anchored (top: auto, bottom: <px>)
+      // when its auto-position flipped above the selection. Convert to a
+      // pure top-anchor at the current visual position so the drag-tracking
+      // top updates aren't fighting a stale `bottom` value.
+      popupEl.style.top    = `${rect.top}px`;
+      popupEl.style.bottom = 'auto';
+      dragging = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup',   onUp,   true);
+    });
+
+    function onMove(e) {
+      if (!dragging) return;
+      let left = e.clientX - dragging.dx;
+      let top  = e.clientY - dragging.dy;
+      // Keep at least a sliver visible on each axis so the user can always
+      // grab it back. Without this, dragging off-screen permanently strands
+      // the popup until next render.
+      const w = popupEl.offsetWidth;
+      const h = popupEl.offsetHeight;
+      const minVisible = 40;
+      left = Math.max(-w + minVisible, Math.min(window.innerWidth  - minVisible, left));
+      top  = Math.max(0,                Math.min(window.innerHeight - minVisible, top));
+      popupEl.style.left = `${left}px`;
+      popupEl.style.top  = `${top}px`;
+    }
+
+    function onUp() {
+      dragging = null;
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup',   onUp,   true);
+    }
+  };
+
   // Live-streaming explain transport. Opens a port per call; emits cumulative
   // text via onDelta(full, chunk) as content_block_delta frames arrive, then
   // resolves with { success, text }. The returned promise carries .cancel()

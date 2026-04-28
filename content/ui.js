@@ -210,6 +210,11 @@
     A.hideBtn();
   });
 
+  // Drag from the header strip to reposition the dropdown. The buttons
+  // inside the header (close, etc.) keep working — makeDraggable bails on
+  // interactive descendants.
+  A.makeDraggable?.(dropdown, els.header);
+
   els.generate.addEventListener('click', async () => {
     if (!A.activeField) return;
 

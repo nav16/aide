@@ -253,27 +253,36 @@
   function positionSelPopup(range) {
     const r = range.getBoundingClientRect();
     const popW = 280;
-    // Use a fixed estimate of the popup's eventual height (header + body
-    // capped at 50vh + followup) instead of selPopup.offsetHeight. Real
-    // height grows from ~30px (placeholder "···") to up to ~460px as deltas
-    // stream in; measuring after the fact would jump the popup mid-read.
-    // Estimating the worst case keeps placement stable for the whole stream.
     const estimatedH = Math.min(window.innerHeight * 0.5 + 80, 460);
     let left = r.left + (r.width / 2) - (popW / 2);
     if (left < 6) left = 6;
     if (left + popW > window.innerWidth - 6) left = window.innerWidth - popW - 6;
-    // Default below the selection so content streams away from the user's
-    // reading line. Flip above only when there's noticeably more room there.
+
     const spaceBelow = window.innerHeight - r.bottom - 10;
     const spaceAbove = r.top - 10;
-    let top;
+
+    // Anchor by the edge that faces the selection. Below-branch anchors
+    // by `top` (popup grows downward); above-branch anchors by `bottom`
+    // (popup grows upward, but its bottom stays glued just above the
+    // selection). Earlier impl used `top = r.top - estimatedH - 10` for
+    // the above-branch, which placed the popup at the worst-case height
+    // (~460px) above the selection — when the actual streamed content
+    // turned out to be ~80-150px the popup looked like it had jumped to
+    // the top of the page. Bottom-anchor keeps the visual anchor fixed
+    // for the whole stream regardless of final height.
+    //
+    // maxHeight clamps to the available space so the popup body's
+    // internal scroll engages instead of overflowing the viewport.
     if (spaceBelow >= estimatedH || spaceBelow >= spaceAbove) {
-      top = r.bottom + 10;
+      selPopup.style.top       = `${r.bottom + 10}px`;
+      selPopup.style.bottom    = 'auto';
+      selPopup.style.maxHeight = `${Math.max(120, spaceBelow)}px`;
     } else {
-      top = Math.max(6, r.top - estimatedH - 10);
+      selPopup.style.top       = 'auto';
+      selPopup.style.bottom    = `${window.innerHeight - r.top + 10}px`;
+      selPopup.style.maxHeight = `${Math.max(120, spaceAbove)}px`;
     }
     selPopup.style.left = `${left}px`;
-    selPopup.style.top  = `${top}px`;
   }
 
   async function copyText(text) {
@@ -557,6 +566,11 @@
   // ---- Wiring ----
 
   selPopup.querySelector('.aif-sel-close').addEventListener('click', A.hideSelPopup);
+
+  // Drag from the header strip (DEFINE/EXPLAIN/FOLLOW-UP label area) to
+  // reposition the popup — handy when the auto-position lands over the
+  // text the user is reading. Buttons inside .aif-sel-actions stay clickable.
+  A.makeDraggable?.(selPopup, selPopup.querySelector('.aif-sel-header'));
 
   prevBtn.addEventListener('click', () => {
     const idx = parseInt(selPopup.dataset.viewIdx || '0', 10);
