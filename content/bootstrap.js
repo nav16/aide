@@ -37,30 +37,26 @@
   }
   mount();
 
-  // If a re-render or hydration sweep removes our host, put it back. The
-  // shadow root and its contents are preserved across detach/re-attach since
-  // they live on the host element, not its parent. Observe both <html> (in
-  // case body is rebuilt) and <body> directly.
+  // Subtree:true so we catch host removal regardless of whether body is
+  // replaced wholesale (Remix's hydrateRoot(document) on job-boards.eu.greenhouse.io,
+  // certain Next.js apps) or just has children swapped. The callback is
+  // O(1) — host.isConnected is a fast bit check — so the firehose of
+  // mutations on a busy SPA is fine.
   const reattachObserver = new MutationObserver(() => {
     if (!host.isConnected) mount();
   });
   if (document.documentElement) {
-    reattachObserver.observe(document.documentElement, { childList: true });
+    reattachObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
-  // body may not exist yet at document_idle in odd setups; observe once it's
-  // there too. This is cheap — childList only, no subtree.
-  const bodyObserver = new MutationObserver(() => {
-    if (document.body) {
-      reattachObserver.observe(document.body, { childList: true });
-      mount();
-      bodyObserver.disconnect();
-    }
-  });
-  if (!document.body && document.documentElement) {
-    bodyObserver.observe(document.documentElement, { childList: true, subtree: true });
-  } else if (document.body) {
-    reattachObserver.observe(document.body, { childList: true });
-  }
+
+  // Belt-and-braces: a MutationObserver fires *after* the mutation, and on
+  // some sites the hydration sweep that strips our host happens in a tight
+  // loop where a single re-attach gets stripped again before the user sees
+  // anything. Re-mount at the standard ready milestones too. mount() is a
+  // no-op when already attached, so the cost is negligible.
+  document.addEventListener('DOMContentLoaded', mount);
+  window.addEventListener('load', mount);
+  [50, 200, 600, 1500, 3000].forEach(t => setTimeout(mount, t));
 
   const root = host.attachShadow({ mode: 'open' });
 
