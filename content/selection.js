@@ -297,7 +297,11 @@
 
   // ---- Explain / Define ----
 
-  async function checkSelection() {
+  async function checkSelection(opts) {
+    // forcedKind comes from the right-click context menu — overrides the
+    // word/explain auto-pick so "Define" works on multi-word selections and
+    // "Explain" works on single words.
+    const forcedKind = opts?.forcedKind || null;
     if (!A.enabled) { A.hideSelPopup(); return; }
     // User clicking into the follow-up input collapses the page selection and
     // refires selectionchange; don't dismiss the popup while they're
@@ -331,13 +335,15 @@
     if (isInsideEditableField(range.commonAncestorContainer)) { A.hideSelPopup(); return; }
 
     const isWord = /^\S+$/.test(text) && text.length < 40;
-    const kind   = isWord ? 'word' : 'explain';
+    const kind   = forcedKind || (isWord ? 'word' : 'explain');
 
     const bodyEl = selPopup.querySelector('.aif-sel-body');
     const typeEl = selPopup.querySelector('.aif-sel-type');
 
-    // same text already showing — no need to re-fetch
-    if (selPopup.style.display === 'block' && selPopup.dataset.selText === text) {
+    // same text already showing — no need to re-fetch. Skip the short-circuit
+    // when the menu forces a different kind so a "Define" click after a
+    // running "Explain" actually swaps the answer.
+    if (selPopup.style.display === 'block' && selPopup.dataset.selText === text && !forcedKind) {
       positionSelPopup(range);
       return;
     }
@@ -581,5 +587,15 @@
   document.addEventListener('selectionchange', () => {
     clearTimeout(selDebounce);
     selDebounce = setTimeout(checkSelection, 300);
+  });
+
+  // Right-click → context menu pick. SW routes the click to the frame the
+  // user clicked in (via info.frameId), so only this frame's listener fires.
+  // The page selection is still live at this point — checkSelection reads
+  // window.getSelection() directly; we just hand it the forced kind.
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.action === 'contextMenu') {
+      checkSelection({ forcedKind: msg.kind });
+    }
   });
 })();

@@ -278,17 +278,53 @@
     // <form> in light DOM by hopping shadowRoot → host as needed.
     const ancestors = crossShadowAncestors(anchor);
     let scope = ancestors.find(el => el.tagName === 'FORM');
+    let allInScope = null;
+
     if (!scope) {
-      // No <form>: pick the lowest ancestor with 2+ deep fields. Capped at
-      // the first 8 levels to avoid full-page deep scans on dense SPAs.
+      // No <form>: previous impl ran deepQueryAll once per ancestor up to
+      // the 8-level cap — worst case 8 full subtree walks crossing every
+      // shadow root, on the hot path of every "Fill entire form" click.
+      // Now: ONE walk on the topmost candidate, then count per-ancestor
+      // memberships in a single pass over the result. Reuses the result
+      // verbatim if the chosen scope is the topmost candidate.
       const limit = Math.min(ancestors.length, 8);
-      for (let i = 0; i < limit; i++) {
-        if (deepQueryAll(ancestors[i], A.FIELD_SELECTOR).length >= 2) { scope = ancestors[i]; break; }
+      if (limit > 0) {
+        const top = ancestors[limit - 1];
+        const candidateSet = new Set();
+        for (let i = 0; i < limit; i++) candidateSet.add(ancestors[i]);
+        const allInTop = deepQueryAll(top, A.FIELD_SELECTOR);
+        const counts = new Map();
+        // For each found field, walk up its cross-shadow ancestor chain and
+        // bump the count on each ancestor that is one of our candidates.
+        // Inline (no allocation) version of crossShadowAncestors — this loop
+        // runs N×depth times per fillForm click; allocating a per-field
+        // ancestor array would add measurable GC pressure on dense forms.
+        for (const f of allInTop) {
+          let cur = f;
+          while (cur && cur !== document) {
+            if (candidateSet.has(cur)) counts.set(cur, (counts.get(cur) || 0) + 1);
+            if (cur.parentNode && cur.parentNode !== document) {
+              cur = cur.parentNode;
+            } else {
+              const r = cur.getRootNode?.();
+              cur = (r instanceof ShadowRoot) ? r.host : null;
+            }
+          }
+        }
+        for (let i = 0; i < limit; i++) {
+          if ((counts.get(ancestors[i]) || 0) >= 2) {
+            scope = ancestors[i];
+            // If chosen scope IS the topmost candidate we already walked,
+            // skip the redundant deepQueryAll on it below.
+            if (scope === top) allInScope = allInTop;
+            break;
+          }
+        }
       }
     }
     if (!scope) scope = document.body;
 
-    const all = deepQueryAll(scope, A.FIELD_SELECTOR);
+    const all = allInScope || deepQueryAll(scope, A.FIELD_SELECTOR);
     if (!all.includes(anchor)) all.unshift(anchor);
     return all.filter(f => {
       // Skip our own injected UI — the dropdown's prompt textarea would

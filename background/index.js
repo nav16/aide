@@ -2,6 +2,65 @@ import { callProvider } from './providers/index.js';
 import { SYSTEM, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, tokensForExplain, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
 import { appendHistory } from './history.js';
 
+// Pre-warm content.css into session storage so all frames share one fetch.
+// chrome.storage.session is in-memory per browser session; default access is
+// TRUSTED_CONTEXTS only, which would block content-script reads. Extending it
+// to TRUSTED_AND_UNTRUSTED_CONTEXTS lets bootstrap.js read directly. Aide
+// stores nothing sensitive in session — only the packaged CSS text — so
+// granting content-script read access is safe; future expansions of session
+// storage need to remember this is now content-readable.
+async function warmContentCssCache() {
+  try {
+    await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
+  } catch {}
+  try {
+    const res = await fetch(chrome.runtime.getURL('content.css'));
+    if (!res.ok) return;
+    const css = await res.text();
+    await chrome.storage.session.set({ aideContentCss: css });
+  } catch {}
+}
+// Top-level call covers SW cold starts (after spin-down/wake), which fire
+// neither onInstalled nor onStartup. The two listeners cover fresh
+// installs/updates and browser launches respectively.
+warmContentCssCache();
+chrome.runtime.onInstalled.addListener(warmContentCssCache);
+chrome.runtime.onStartup.addListener(warmContentCssCache);
+
+// Right-click on selected text → "Aide: Explain / Define". Lets users
+// override the auto-popup's word/explain heuristic ("Define this multi-word
+// phrase", "Explain this single word"), and gives an explicit invocation
+// path on sites where the auto-popup is intentionally disabled.
+function ensureContextMenus() {
+  // removeAll → recreate is idempotent and avoids "duplicate id" errors on
+  // dev reload. Items persist across SW restarts within an install, so we
+  // only need this on install/update/browser-startup.
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'aide-explain', title: 'Aide: Explain selection', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'aide-define',  title: 'Aide: Define selection',  contexts: ['selection'] });
+  });
+}
+chrome.runtime.onInstalled.addListener(ensureContextMenus);
+chrome.runtime.onStartup.addListener(ensureContextMenus);
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab?.id) return;
+  const kind = info.menuItemId === 'aide-define'  ? 'word'
+             : info.menuItemId === 'aide-explain' ? 'explain'
+             : null;
+  if (!kind) return;
+  // Scope to info.frameId — the user may have right-clicked inside an
+  // iframe (Greenhouse boards, embedded forms). Without a frameId, the
+  // message goes only to the top frame and the iframe's content script
+  // never hears it.
+  chrome.tabs.sendMessage(
+    tab.id,
+    { action: 'contextMenu', kind },
+    { frameId: info.frameId },
+    () => { void chrome.runtime.lastError; } // swallow "no receiver" if frame has no content script
+  );
+});
+
 // Today's date is prepended to every system prompt so the model can resolve
 // time-relative fields ("today", "next Friday", "year of birth assuming I'm
 // 30") instead of falling back to its training cutoff. Day-of-week helps with

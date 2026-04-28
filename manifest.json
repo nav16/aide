@@ -3,7 +3,7 @@
   "name": "Aide",
   "version": "1.0.0",
   "description": "AI-powered assistant for filling web form fields and explaining selected text.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background/index.js",
