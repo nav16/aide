@@ -105,7 +105,7 @@
       css = cached?.aideContentCss || '';
     } catch {}
     if (!css) {
-      try { css = await fetch(chrome.runtime.getURL('content.css')).then(r => r.text()); }
+      try { css = await fetch(chrome.runtime.getURL('content/content.css')).then(r => r.text()); }
       catch { return; }
       // Best-effort populate so the next frame on this page hits the cache.
       try { chrome.storage.session.set({ aideContentCss: css }); } catch {}

@@ -1,4 +1,4 @@
-// Run: node create-icons.js
+// Run: node tools/create-icons.js
 // Generates icons/icon16.png, icons/icon48.png, icons/icon128.png
 // No external dependencies — pure Node.js with built-in zlib.
 

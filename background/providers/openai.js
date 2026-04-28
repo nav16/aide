@@ -1,6 +1,6 @@
-import { fetchWithRetry } from '../retry.js';
-import { extractError } from '../http.js';
-import { readStreamLines } from './streaming.js';
+import { fetchWithRetry } from '../lib/retry.js';
+import { extractError } from '../lib/http.js';
+import { readStreamLines } from '../lib/streaming.js';
 
 export async function openai({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
   // OpenAI does prefix-cache automatically (>1024 tokens), so keeping system

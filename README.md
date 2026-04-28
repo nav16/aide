@@ -91,33 +91,47 @@ No build step. Edit files, reload the extension in `chrome://extensions`.
 aide/
 ├── manifest.json              # MV3 config
 ├── content/                   # Page overlay (injected on every frame)
-│   ├── bootstrap.js           # Guard against double-inject
-│   ├── constants.js           # Shared IDs / selectors
-│   ├── shadow.js              # Shadow DOM host + styles
-│   ├── messaging.js           # chrome.runtime bridge
-│   ├── fields.js              # Input/textarea detection + streaming writes
-│   ├── ui.js                  # Overlay rendering
-│   ├── selection.js           # Text-selection handlers
-│   └── main.js                # Wiring / entry
-├── content.css                # Overlay styles
+│   ├── bootstrap.js           # Shadow root + guard against double-inject
+│   ├── constants.js           # Shared selectors / sensitive-autocomplete patterns
+│   ├── messaging.js           # SW bridge, settings cache, makeDraggable, streamExplain
+│   ├── fields.js              # Input/textarea detection + insertion
+│   ├── ui.js                  # Generate dropdown + fill-form preview
+│   ├── selection.js           # Explain / Define / follow-up popup
+│   ├── main.js                # Wiring / entry
+│   └── content.css            # Overlay styles (loaded into the shadow root)
 ├── background/                # Service worker (ES module)
-│   ├── index.js               # Router + callProvider map
-│   ├── http.js                # Fetch wrapper
-│   ├── retry.js               # Exponential backoff
-│   ├── prompts.js             # System prompts per action
+│   ├── index.js               # Router + warmup + context menus
+│   ├── prompts.js             # System prompts + cleaners per action
+│   ├── lib/                   # SW utilities
+│   │   ├── http.js            # Error extraction
+│   │   ├── retry.js           # Fetch wrapper with timeout + backoff
+│   │   ├── streaming.js       # SSE / NDJSON line reader
+│   │   └── history.js         # Persistent interaction log
 │   └── providers/
 │       ├── claude.js
 │       ├── openai.js
 │       ├── gemini.js
 │       ├── ollama.js
 │       └── index.js
-├── popup.html / popup.js / popup.css  # Settings UI
-├── create-icons.js            # Regenerate PNG icons (node create-icons.js)
+├── popup/                     # Toolbar popup (provider/model/key + global toggle)
+│   ├── popup.html
+│   ├── popup.js
+│   └── popup.css
+├── settings/                  # Full settings page (profile, prefs)
+│   ├── settings.html
+│   ├── settings.js
+│   └── settings.css
+├── history/                   # Interaction history viewer
+│   ├── history.html
+│   ├── history.js
+│   └── history.css
 ├── icons/                     # 16/48/128 PNGs
-└── images/                    # README screenshots
+├── images/                    # README screenshots
+└── tools/
+    └── create-icons.js        # Regenerate PNG icons (node tools/create-icons.js)
 ```
 
-Adding a provider: drop a new file in `background/providers/`, register it in `background/providers/index.js`, and add a tab + model list in `popup.html` / `popup.js`.
+Adding a provider: drop a new file in `background/providers/`, register it in `background/providers/index.js`, and add a tab + model list in `popup/popup.html` / `popup/popup.js`.
 
 ---
 

@@ -144,10 +144,10 @@ saveBtn.addEventListener('click', () => {
 });
 
 settingsBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+  chrome.tabs.create({ url: chrome.runtime.getURL('settings/settings.html') });
 });
 historyBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
+  chrome.tabs.create({ url: chrome.runtime.getURL('history/history.html') });
 });
 
 // Global on/off — writes immediately, no Save click needed. Content scripts

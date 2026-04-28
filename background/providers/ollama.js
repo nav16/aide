@@ -1,5 +1,5 @@
-import { fetchWithRetry } from '../retry.js';
-import { readStreamLines } from './streaming.js';
+import { fetchWithRetry } from '../lib/retry.js';
+import { readStreamLines } from '../lib/streaming.js';
 
 export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');

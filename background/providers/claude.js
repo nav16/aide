@@ -1,6 +1,6 @@
-import { fetchWithRetry } from '../retry.js';
-import { extractError } from '../http.js';
-import { readStreamLines } from './streaming.js';
+import { fetchWithRetry } from '../lib/retry.js';
+import { extractError } from '../lib/http.js';
+import { readStreamLines } from '../lib/streaming.js';
 
 export async function claude({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
   // Claude has no JSON-mode flag; tool-use with tool_choice forces the model

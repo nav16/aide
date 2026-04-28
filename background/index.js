@@ -1,6 +1,6 @@
 import { callProvider } from './providers/index.js';
 import { SYSTEM, TEMPERATURE, DEFINE_SCHEMA, FILL_FORM_SCHEMA, userMsg, explainPrompts, fillFormPrompts, tokensForField, tokensForExplain, stopForField, cleanFormOutput, cleanDefineOutput, cleanFillFormOutput } from './prompts.js';
-import { appendHistory } from './history.js';
+import { appendHistory } from './lib/history.js';
 
 // Pre-warm content.css into session storage so all frames share one fetch.
 // chrome.storage.session is in-memory per browser session; default access is
@@ -14,7 +14,7 @@ async function warmContentCssCache() {
     await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
   } catch {}
   try {
-    const res = await fetch(chrome.runtime.getURL('content.css'));
+    const res = await fetch(chrome.runtime.getURL('content/content.css'));
     if (!res.ok) return;
     const css = await res.text();
     await chrome.storage.session.set({ aideContentCss: css });
