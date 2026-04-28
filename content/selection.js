@@ -298,6 +298,7 @@
   // ---- Explain / Define ----
 
   async function checkSelection() {
+    if (!A.enabled) { A.hideSelPopup(); return; }
     // User clicking into the follow-up input collapses the page selection and
     // refires selectionchange; don't dismiss the popup while they're
     // interacting with our own UI. activeElement at document scope retargets

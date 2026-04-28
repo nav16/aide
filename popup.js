@@ -21,7 +21,7 @@ const STATIC_MODELS = {
 // Profile + fillFormEnabled live exclusively on the full settings page now —
 // not read or written here. fillFormEnabled is preserved on save by passing
 // through whatever the settings page wrote.
-const SYNC_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled'];
+const SYNC_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled', 'enabled'];
 const apiKeyName = p => `${p}ApiKey`;
 
 const $ = id => document.getElementById(id);
@@ -39,6 +39,7 @@ const statusDot      = $('statusDot');
 const apiKeyGroup    = $('apiKeyGroup');
 const ollamaGroup    = $('ollamaUrlGroup');
 const refreshBtn     = $('refreshModels');
+const enabledToggle  = $('enabledToggle');
 const tabs           = document.querySelectorAll('.tab');
 
 function show(el) { el.classList.remove('hidden'); }
@@ -149,6 +150,13 @@ historyBtn.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 });
 
+// Global on/off — writes immediately, no Save click needed. Content scripts
+// pick up the change via chrome.storage.onChanged and tear down any visible
+// UI in the same tick.
+enabledToggle.addEventListener('change', () => {
+  chrome.storage.sync.set({ enabled: enabledToggle.checked });
+});
+
 function flashStatus(msg, type) {
   statusEl.textContent = msg;
   statusEl.className = `status ${type} show`;
@@ -167,6 +175,9 @@ chrome.storage.sync.get(SYNC_KEYS, async data => {
   providerInput.value = provider;
   apiKeyEl.value      = data[apiKeyName(provider)] || '';
   ollamaUrlEl.value   = data.ollamaBaseUrl || 'http://localhost:11434';
+  // Default true: a fresh install has Aide on. Only an explicit `false`
+  // unchecks the box.
+  enabledToggle.checked = data.enabled !== false;
 
   setActiveTab(provider);
   applyProvider(provider, data.model);

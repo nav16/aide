@@ -8,6 +8,12 @@
   // any storage change so popup edits take effect without a page reload.
   A.cachedSettings = null;
 
+  // Synchronous mirror of the global enable toggle. focusin and selectionchange
+  // handlers fire too often to await storage on every event, so we keep this
+  // boolean fresh and read it inline. Default true so the brief window before
+  // the cache warms doesn't black-hole the UI.
+  A.enabled = true;
+
   A.getSettings = function () {
     if (A.cachedSettings) return Promise.resolve(A.cachedSettings);
     // userProfile lives in storage.local (freeform PII, never synced).
@@ -18,11 +24,31 @@
     ]).then(([sync, local]) => {
       const merged = { ...sync, userProfile: local.userProfile || '' };
       A.cachedSettings = merged;
+      A.enabled = merged.enabled !== false;
       return merged;
     });
   };
 
-  chrome.storage.onChanged.addListener(() => { A.cachedSettings = null; });
+  // Warm the cache and A.enabled so the first focus event after page load
+  // sees the correct toggle state (default-true is fine for the race window,
+  // but if the user has Aide globally off we want to honor that immediately).
+  A.getSettings();
+
+  chrome.storage.onChanged.addListener((changes) => {
+    A.cachedSettings = null;
+    if ('enabled' in changes) {
+      A.enabled = changes.enabled.newValue !== false;
+      // Tear down any visible UI on disable so the user sees the change
+      // without needing to refocus / reselect. These helpers are owned by
+      // ui.js and selection.js, both of which load before any storage event
+      // can realistically arrive (popup write is user-initiated).
+      if (!A.enabled) {
+        try { A.hideBtn?.(); } catch {}
+        try { A.hideDropdown?.(); } catch {}
+        try { A.hideSelPopup?.(); } catch {}
+      }
+    }
+  });
 
   // Request-id counters shared across files. `selReqId` is reused for explain
   // *and* follow-up so later turns supersede earlier ones with a single check.

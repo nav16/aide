@@ -28,6 +28,7 @@
   }
 
   document.addEventListener('focusin', (e) => {
+    if (!A.enabled) return;
     if (fromOurUI(e)) return;
     const target = realTarget(e);
     if (!target || target.nodeType !== 1) return;
@@ -81,7 +82,7 @@
   // Page may have already auto-focused a field before our content script ran
   // (document_idle fires after autofocus). Surface the button for it.
   const active = document.activeElement;
-  if (active && active !== document.body && active.matches?.(A.FIELD_SELECTOR)) {
+  if (A.enabled && active && active !== document.body && active.matches?.(A.FIELD_SELECTOR)) {
     A.attach(active);
     if (A.attachedFields.has(active)) A.onFocus({ target: active });
   }
