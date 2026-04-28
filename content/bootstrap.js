@@ -64,12 +64,17 @@
 
   const root = host.attachShadow({ mode: 'open' });
 
-  // Pull our packaged CSS into the shadow root via <link>. content.css is
-  // listed in manifest's web_accessible_resources so the URL is fetchable.
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = chrome.runtime.getURL('content.css');
-  root.appendChild(link);
+  // Inline <style> instead of <link href="chrome-extension://...">: strict
+  // page CSPs (Greenhouse, GitHub, banks) often set style-src without a
+  // chrome-extension: source and refuse the link. fetch() runs in the content
+  // script's isolated world and is not gated by the page CSP, and an inline
+  // <style> only needs 'unsafe-inline' which strict policies still grant.
+  const styleEl = document.createElement('style');
+  root.appendChild(styleEl);
+  fetch(chrome.runtime.getURL('content.css'))
+    .then(r => r.text())
+    .then(css => { styleEl.textContent = css; })
+    .catch(() => {});
 
   A.shadowHost = host;
   A.shadowRoot = root;
