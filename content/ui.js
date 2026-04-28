@@ -37,6 +37,27 @@
   A.uiRoot.appendChild(dropdown);
   A.dropdown = dropdown;
 
+  // The .aif-* descendants are static — innerHTML above defines them once and
+  // we never replace them (only their text/attrs). Re-querying on every mode
+  // switch, openDropdown, showError, focus dispatch, and streaming-paint tick
+  // was a measurable hot path; caching the references makes those constant.
+  // The fill-form preview rows (.aif-ff-row inside ffList) ARE rebuilt by
+  // renderFFList, so we still query those live.
+  const els = {
+    header:    dropdown.querySelector('.aif-header'),
+    labelText: dropdown.querySelector('.aif-label-text'),
+    badge:     dropdown.querySelector('.aif-badge'),
+    close:     dropdown.querySelector('.aif-close'),
+    prompt:    dropdown.querySelector('.aif-prompt'),
+    generate:  dropdown.querySelector('.aif-generate'),
+    fillform:  dropdown.querySelector('.aif-fillform'),
+    result:    dropdown.querySelector('.aif-result'),
+    ffPanel:   dropdown.querySelector('.aif-ff-panel'),
+    ffList:    dropdown.querySelector('.aif-ff-list'),
+    ffCancel:  dropdown.querySelector('.aif-ff-cancel'),
+    ffApply:   dropdown.querySelector('.aif-ff-apply')
+  };
+
   // ---- State owned by the dropdown flow ----
 
   A.activeField    = null;
@@ -52,25 +73,25 @@
   }
 
   function setComposeMode() {
-    dropdown.querySelector('.aif-header').style.display    = '';
-    dropdown.querySelector('.aif-prompt').style.display    = '';
-    dropdown.querySelector('.aif-generate').style.display  = '';
+    els.header.style.display   = '';
+    els.prompt.style.display   = '';
+    els.generate.style.display = '';
     // ffBtn visibility tracks the popup toggle; settings are cached after
     // the first openDropdown so this read is synchronous in steady state.
     const ffEnabled = !!(A.cachedSettings?.fillFormEnabled);
-    dropdown.querySelector('.aif-fillform').style.display  = ffEnabled ? '' : 'none';
-    dropdown.querySelector('.aif-ff-panel').style.display  = 'none';
+    els.fillform.style.display = ffEnabled ? '' : 'none';
+    els.ffPanel.style.display  = 'none';
   }
 
   function setPreviewMode() {
     // Header describes the anchor field — irrelevant when previewing values
     // for the entire form. Hide compose UI + header, show only the preview.
-    dropdown.querySelector('.aif-header').style.display    = 'none';
-    dropdown.querySelector('.aif-prompt').style.display    = 'none';
-    dropdown.querySelector('.aif-generate').style.display  = 'none';
-    dropdown.querySelector('.aif-fillform').style.display  = 'none';
-    dropdown.querySelector('.aif-result').style.display    = 'none';
-    dropdown.querySelector('.aif-ff-panel').style.display  = '';
+    els.header.style.display   = 'none';
+    els.prompt.style.display   = 'none';
+    els.generate.style.display = 'none';
+    els.fillform.style.display = 'none';
+    els.result.style.display   = 'none';
+    els.ffPanel.style.display  = '';
   }
 
   // ---- Positioning ----
@@ -125,32 +146,29 @@
     const labelText = ctx.maxChars
       ? `Field: ${ctx.label} · ${ctx.maxChars} chars max`
       : `Field: ${ctx.label}`;
-    dropdown.querySelector('.aif-label-text').textContent = labelText;
-    dropdown.querySelector('.aif-result').textContent = '';
-    dropdown.querySelector('.aif-result').className = 'aif-result';
-    dropdown.querySelector('.aif-result').style.display = 'none';
-    const genBtn = dropdown.querySelector('.aif-generate');
-    genBtn.disabled = false;
-    genBtn.textContent = 'Generate';
-    genBtn.classList.remove('loading');
+    els.labelText.textContent = labelText;
+    els.result.textContent    = '';
+    els.result.className      = 'aif-result';
+    els.result.style.display  = 'none';
+    els.generate.disabled     = false;
+    els.generate.textContent  = 'Generate';
+    els.generate.classList.remove('loading');
     // restore last prompt with text selected so user can overwrite easily
-    const promptEl = dropdown.querySelector('.aif-prompt');
-    promptEl.value = A.lastPrompt;
+    els.prompt.value = A.lastPrompt;
     requestAnimationFrame(() => {
-      promptEl.focus();
-      if (A.lastPrompt) promptEl.select();
+      els.prompt.focus();
+      if (A.lastPrompt) els.prompt.select();
     });
 
     A.getSettings().then(d => {
       const labels = { claude: 'Claude', openai: 'OpenAI', gemini: 'Gemini', ollama: 'Ollama' };
-      dropdown.querySelector('.aif-badge').textContent = labels[d.provider] || '⚙ Not configured';
+      els.badge.textContent = labels[d.provider] || '⚙ Not configured';
       // Fill-form is gated by an explicit user toggle in the popup. Hide the
       // button entirely when off so it doesn't take visual space; show it
       // when enabled.
-      const ffBtn = dropdown.querySelector('.aif-fillform');
-      ffBtn.style.display = d.fillFormEnabled ? '' : 'none';
-      ffBtn.disabled = false;
-      ffBtn.title = '';
+      els.fillform.style.display = d.fillFormEnabled ? '' : 'none';
+      els.fillform.disabled      = false;
+      els.fillform.title         = '';
     });
 
     dropdown.style.display = 'block';
@@ -172,14 +190,12 @@
   };
 
   A.showError = function (msg) {
-    const genBtn   = dropdown.querySelector('.aif-generate');
-    const resultEl = dropdown.querySelector('.aif-result');
-    genBtn.disabled = false;
-    genBtn.textContent = 'Generate';
-    genBtn.classList.remove('loading');
-    resultEl.className = 'aif-result aif-error';
-    resultEl.textContent = msg;
-    resultEl.style.display = 'block';
+    els.generate.disabled    = false;
+    els.generate.textContent = 'Generate';
+    els.generate.classList.remove('loading');
+    els.result.className     = 'aif-result aif-error';
+    els.result.textContent   = msg;
+    els.result.style.display = 'block';
   };
 
   // ---- Wiring ----
@@ -189,12 +205,12 @@
     if (A.activeField) A.openDropdown(A.activeField);
   });
 
-  dropdown.querySelector('.aif-close').addEventListener('click', () => {
+  els.close.addEventListener('click', () => {
     A.hideDropdown();
     A.hideBtn();
   });
 
-  dropdown.querySelector('.aif-generate').addEventListener('click', async () => {
+  els.generate.addEventListener('click', async () => {
     if (!A.activeField) return;
 
     const settings = await A.getSettings();
@@ -207,17 +223,14 @@
       return A.showError('API key not set. Open extension popup to configure.');
     }
 
-    const genBtn   = dropdown.querySelector('.aif-generate');
-    const promptEl = dropdown.querySelector('.aif-prompt');
-    A.lastPrompt = promptEl.value.trim();
+    A.lastPrompt = els.prompt.value.trim();
 
-    genBtn.disabled = true;
-    genBtn.textContent = '· · ·';
-    genBtn.classList.add('loading');
+    els.generate.disabled    = true;
+    els.generate.textContent = '· · ·';
+    els.generate.classList.add('loading');
 
-    const resultEl = dropdown.querySelector('.aif-result');
-    resultEl.className = 'aif-result';
-    resultEl.style.display = 'none';
+    els.result.className     = 'aif-result';
+    els.result.style.display = 'none';
 
     // If the user clicks Generate twice in a row, abort the first. Normally
     // the button is disabled while running, but the Cmd/Ctrl+Enter shortcut
@@ -243,9 +256,9 @@
     };
 
     const resetBtn = () => {
-      genBtn.disabled = false;
-      genBtn.textContent = 'Generate';
-      genBtn.classList.remove('loading');
+      els.generate.disabled    = false;
+      els.generate.textContent = 'Generate';
+      els.generate.classList.remove('loading');
     };
 
     chrome.runtime.sendMessage(msgPayload, (response) => {
@@ -266,18 +279,24 @@
     });
   });
 
-  dropdown.querySelector('.aif-prompt').addEventListener('keydown', (e) => {
+  els.prompt.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      dropdown.querySelector('.aif-generate').click();
+      els.generate.click();
     }
   });
 
   // ---- Fill entire form ----
 
   function buildDescriptors(fields) {
+    // Form-scope context (form aria/labelledby/heading) is identical for
+    // every field under the same form. Compute it once on the anchor and
+    // hand it to extractFieldContext so the per-field loop skips N-1
+    // closest('form') walks plus the querySelector('h1...legend') sweep on
+    // dense SPA forms. Fieldset legend is still resolved per-field.
+    const formScopeContext = fields.length ? A.computeFormScopeContext(fields[0]) : '';
     return fields.map((f, i) => {
-      const ctx = A.extractFieldContext(f);
+      const ctx = A.extractFieldContext(f, { formScopeContext });
       // hostname is per-page, not per-field — drop from the descriptor and
       // pass once at the request level.
       delete ctx.hostname;
@@ -287,7 +306,6 @@
 
   function renderFFList() {
     if (!A.ffState) return;
-    const list = dropdown.querySelector('.aif-ff-list');
     const rows = A.ffState.fills.map(f => {
       const desc = A.ffState.descriptors.find(d => d.key === f.key);
       const label = desc?.label || f.key;
@@ -298,10 +316,10 @@
           <input class="aif-ff-input" type="text" value="${escapeHtml(f.value || '')}"${max} placeholder="— skip —">
         </div>`;
     }).join('');
-    list.innerHTML = rows || '<div class="aif-ff-empty">No fields returned.</div>';
+    els.ffList.innerHTML = rows || '<div class="aif-ff-empty">No fields returned.</div>';
   }
 
-  dropdown.querySelector('.aif-fillform').addEventListener('click', async () => {
+  els.fillform.addEventListener('click', async () => {
     if (!A.activeField) return;
 
     const settings = await A.getSettings();
@@ -315,10 +333,9 @@
     const descriptors = buildDescriptors(fields);
     const fieldMap = new Map(fields.map((f, i) => ['f' + i, f]));
 
-    const ffBtn = dropdown.querySelector('.aif-fillform');
-    ffBtn.disabled = true;
-    ffBtn.classList.add('loading');
-    ffBtn.textContent = 'Reading form…';
+    els.fillform.disabled = true;
+    els.fillform.classList.add('loading');
+    els.fillform.textContent = 'Reading form…';
 
     if (A.ffReqId !== null) {
       chrome.runtime.sendMessage({ action: 'cancelFillForm', reqId: A.ffReqId });
@@ -340,9 +357,9 @@
     }, (response) => {
       if (reqId !== A.ffReqId) return;
       A.ffReqId = null;
-      ffBtn.disabled = false;
-      ffBtn.classList.remove('loading');
-      ffBtn.textContent = 'Fill entire form';
+      els.fillform.disabled = false;
+      els.fillform.classList.remove('loading');
+      els.fillform.textContent = 'Fill entire form';
 
       if (chrome.runtime.lastError || !response?.success) {
         return A.showError(response?.error || 'Fill form failed.');
@@ -371,17 +388,18 @@
     });
   });
 
-  dropdown.querySelector('.aif-ff-cancel').addEventListener('click', () => {
+  els.ffCancel.addEventListener('click', () => {
     A.ffState = null;
     setComposeMode();
-    dropdown.querySelector('.aif-ff-list').innerHTML = '';
+    els.ffList.innerHTML = '';
     if (A.activeField) A.positionDropdown(A.activeField);
   });
 
-  dropdown.querySelector('.aif-ff-apply').addEventListener('click', () => {
+  els.ffApply.addEventListener('click', () => {
     if (!A.ffState) return;
-    // Read user-edited values from inputs.
-    const rows = dropdown.querySelectorAll('.aif-ff-row');
+    // Read user-edited values from inputs. Rows are dynamic — rebuilt by
+    // renderFFList — so they're queried live rather than from the els cache.
+    const rows = els.ffList.querySelectorAll('.aif-ff-row');
     const items = [];
     rows.forEach(row => {
       const key = row.getAttribute('data-key');

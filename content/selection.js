@@ -383,12 +383,26 @@
 
     // word kind returns JSON via the structured-output path — partial JSON
     // is useless to paint, so we suppress live deltas and render once at done.
+    //
+    // For prose kinds: deltas arrive ~80x for a 500-token answer, and each
+    // call here re-runs the full markdown parse + replaces all of bodyEl —
+    // O(N²) work over the stream. rAF-coalesce so we do at most one parse
+    // per frame; the user can't read faster than that anyway. We track only
+    // the latest cumulative text since each delta supersedes the previous.
+    let paintPending = false;
+    let paintLatest  = '';
     const livePaint = kind !== 'word'
       ? (full) => {
-          if (myReqId !== A.selReqId) return;
-          if (selPopup.style.display === 'none') return;
-          bodyEl.className = 'aif-sel-body';
-          bodyEl.innerHTML = renderMarkdown(full);
+          paintLatest = full;
+          if (paintPending) return;
+          paintPending = true;
+          requestAnimationFrame(() => {
+            paintPending = false;
+            if (myReqId !== A.selReqId) return;
+            if (selPopup.style.display === 'none') return;
+            bodyEl.className = 'aif-sel-body';
+            bodyEl.innerHTML = renderMarkdown(paintLatest);
+          });
         }
       : null;
 
@@ -485,6 +499,11 @@
     // Cancel any prior follow-up still in flight.
     if (A.followupStream) { try { A.followupStream.cancel(); } catch {} A.followupStream = null; }
 
+    // Same rAF coalesce as the explain path: deltas arrive faster than the
+    // user can read, and re-parsing the full markdown string per chunk is
+    // O(N²) over the stream. One parse per frame, paint the latest text.
+    let paintPending = false;
+    let paintLatest  = '';
     const stream = A.streamExplain({
       kind: 'followup',
       text: question,
@@ -496,10 +515,16 @@
       model: settings.model,
       ollamaBaseUrl: settings.ollamaBaseUrl
     }, (full) => {
-      if (A.followupStream !== stream) return; // superseded
-      if (selPopup.style.display === 'none') return;
-      bodyEl.className = 'aif-sel-body';
-      bodyEl.innerHTML = renderMarkdown(full);
+      paintLatest = full;
+      if (paintPending) return;
+      paintPending = true;
+      requestAnimationFrame(() => {
+        paintPending = false;
+        if (A.followupStream !== stream) return; // superseded
+        if (selPopup.style.display === 'none') return;
+        bodyEl.className = 'aif-sel-body';
+        bodyEl.innerHTML = renderMarkdown(paintLatest);
+      });
     });
     A.followupStream = stream;
     const response = await stream;

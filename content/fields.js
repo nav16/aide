@@ -123,34 +123,53 @@
     return text.length > 240 ? text.slice(0, 240) + '…' : text;
   }
 
-  function extractFormContext(field) {
+  // Per-field: fieldset legend / aria-label. Two fields under different
+  // fieldsets get different legends ("Personal info" vs "Address"), so this
+  // can't be cached across the field loop.
+  function extractFieldsetContext(field) {
     const fieldset = field.closest('fieldset');
-    if (fieldset) {
-      const legend = fieldset.querySelector(':scope > legend');
-      if (legend?.textContent.trim()) return legend.textContent.trim();
-      const al = fieldset.getAttribute('aria-label');
-      if (al) return al.trim();
-    }
-    const form = field.closest('form');
-    if (form) {
-      const ariaLabel = form.getAttribute('aria-label');
-      if (ariaLabel) return ariaLabel.trim();
-      const labelledBy = form.getAttribute('aria-labelledby');
-      if (labelledBy) {
-        // aria-labelledby is a space-separated ID list; resolve each and join.
-        const t = labelledBy.trim().split(/\s+/)
-          .map(id => document.getElementById(id)?.textContent?.trim())
-          .filter(Boolean).join(' ');
-        if (t) return t;
-      }
-      // Heading inside form
-      const h = form.querySelector('h1, h2, h3, h4, legend');
-      if (h?.textContent.trim()) return h.textContent.trim().slice(0, 120);
-    }
+    if (!fieldset) return '';
+    const legend = fieldset.querySelector(':scope > legend');
+    if (legend?.textContent.trim()) return legend.textContent.trim();
+    const al = fieldset.getAttribute('aria-label');
+    if (al) return al.trim();
     return '';
   }
 
-  A.extractFieldContext = function (field) {
+  // Per-scope: form's aria/labelledby/heading. Identical for every field in
+  // the same form, so fillForm computes once and threads the result back via
+  // extractFieldContext's `opts.formScopeContext` to skip N-1 redundant
+  // closest('form') walks + querySelector('h1...legend') on dense pages.
+  A.computeFormScopeContext = function (anchor) {
+    const form = anchor.closest?.('form');
+    if (!form) return '';
+    const ariaLabel = form.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel.trim();
+    const labelledBy = form.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      // aria-labelledby is a space-separated ID list; resolve each and join.
+      const t = labelledBy.trim().split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent?.trim())
+        .filter(Boolean).join(' ');
+      if (t) return t;
+    }
+    // Heading inside form
+    const h = form.querySelector('h1, h2, h3, h4, legend');
+    if (h?.textContent.trim()) return h.textContent.trim().slice(0, 120);
+    return '';
+  };
+
+  function extractFormContext(field, prebuiltScope) {
+    // Fieldset (per-field) wins over form scope (shared across fields).
+    const fs = extractFieldsetContext(field);
+    if (fs) return fs;
+    // Hot-path callers (fillForm) pass the precomputed scope; everyone else
+    // computes it lazily here.
+    if (prebuiltScope !== undefined) return prebuiltScope;
+    return A.computeFormScopeContext(field);
+  }
+
+  A.extractFieldContext = function (field, opts) {
     const ctx = { label: A.extractLabel(field) };
     const placeholder = extractPlaceholder(field);
     if (placeholder && placeholder !== ctx.label) ctx.placeholder = placeholder;
@@ -194,7 +213,7 @@
     const help = extractDescribedBy(field);
     if (help) ctx.describedBy = help;
 
-    const form = extractFormContext(field);
+    const form = extractFormContext(field, opts?.formScopeContext);
     if (form && form !== ctx.label) ctx.formContext = form;
 
     ctx.hostname = location.hostname;
