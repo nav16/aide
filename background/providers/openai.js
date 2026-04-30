@@ -2,7 +2,7 @@ import { fetchWithRetry } from '../lib/retry.js';
 import { extractError } from '../lib/http.js';
 import { readStreamLines } from '../lib/streaming.js';
 
-export async function openai({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
+export async function openai({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, images, onDelta, signal, timeoutMs }) {
   // OpenAI does prefix-cache automatically (>1024 tokens), so keeping system
   // stable across calls maximizes hit rate. Profile appended at the tail
   // means the base prefix stays cacheable; profile edits only invalidate
@@ -30,9 +30,24 @@ export async function openai({ apiKey, model, user, system, userProfile, maxToke
     ...(stop?.length ? { stop } : {}),
     ...(responseFormat ? { response_format: responseFormat } : {}),
     ...(stream ? { stream: true } : {}),
+    // Vision: chat.completions accepts an array of typed content parts on
+    // the user message, mixing image_url and text. Plain string preserved
+    // for text-only calls so unrelated requests stay diff-clean against
+    // OpenAI's automatic prefix cache.
     messages: [
       { role: 'system', content: sys },
-      { role: 'user',   content: user }
+      {
+        role: 'user',
+        content: images?.length
+          ? [
+              ...images.map(img => ({
+                type: 'image_url',
+                image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
+              })),
+              { type: 'text', text: user }
+            ]
+          : user
+      }
     ]
   };
 

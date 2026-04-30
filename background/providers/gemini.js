@@ -2,7 +2,7 @@ import { fetchWithRetry } from '../lib/retry.js';
 import { extractError } from '../lib/http.js';
 import { readStreamLines } from '../lib/streaming.js';
 
-export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
+export async function gemini({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, images, onDelta, signal, timeoutMs }) {
   // Gemini's implicit caching keys off the request prefix; keeping system
   // stable across calls + appending the profile at the tail preserves the
   // cacheable prefix and only the profile portion changes per-user.
@@ -36,7 +36,18 @@ export async function gemini({ apiKey, model, user, system, userProfile, maxToke
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: sys }] },
-      contents: [{ parts: [{ text: user }] }],
+      // Vision: Gemini parts can interleave inline_data (base64 + mime)
+      // with text. Image first, text second matches Google's own docs and
+      // examples; order doesn't change the model's reading but keeps the
+      // payload conventional.
+      contents: [{
+        parts: [
+          ...(images?.length
+            ? images.map(img => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } }))
+            : []),
+          { text: user }
+        ]
+      }],
       ...(Object.keys(generationConfig).length ? { generationConfig } : {})
     })
   }, timeoutMs);

@@ -1,7 +1,7 @@
 import { fetchWithRetry } from '../lib/retry.js';
 import { readStreamLines } from '../lib/streaming.js';
 
-export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
+export async function ollama({ baseUrl, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, images, onDelta, signal, timeoutMs }) {
   const base = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
   // Append profile to system. Ollama has no prompt-cache concept like Anthropic,
   // so a single combined system string is simplest. Skipped when empty.
@@ -38,9 +38,20 @@ export async function ollama({ baseUrl, model, user, system, userProfile, maxTok
       // form is more reliable; falls back to plain 'json' if no schema given.
       ...(jsonSchema ? { format: jsonSchema.schema } : {}),
       options,
+      // Vision: Ollama's chat API takes an `images` array of raw base64
+      // strings (no data: prefix, no mime type) on the user message. Only
+      // models with vision weights — llava, llama3.2-vision, qwen2-vl etc.
+      // — actually consume them; text-only models will silently ignore the
+      // attachment, which is why a non-vision local model would say
+      // "please provide the image". Surfacing that as a friendly error
+      // belongs in the popup model gate, not here.
       messages: [
         { role: 'system', content: sys },
-        { role: 'user',   content: user }
+        {
+          role: 'user',
+          content: user,
+          ...(images?.length ? { images: images.map(img => img.base64) } : {})
+        }
       ]
     })
   }, timeoutMs);
