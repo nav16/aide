@@ -102,7 +102,14 @@
     // call. 8px is below the typical click jitter on trackpads.
     if (r.w < 8 || r.h < 8) { teardown(); return; }
     committedRect = r;
-    showToolbar(r);
+    // snipAskFirst (default on) gates the post-release toolbar. Off = run
+    // the default explain immediately on release, no toolbar shown.
+    // getSettings is cached after first read; on the rare cold path we
+    // fall back to showing the toolbar (safer than firing a request the
+    // user didn't expect).
+    A.getSettings()
+      .then(s => (s?.snipAskFirst !== false ? showToolbar(r) : commit('')))
+      .catch(() => showToolbar(r));
   }
 
   function computeRect(x2, y2) {

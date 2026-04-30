@@ -18,5 +18,5 @@
   // 2FA inputs). https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#autofill
   A.SENSITIVE_AUTOCOMPLETE = /\b(cc-|credit-card|card-|current-password|new-password|one-time-code|otp|pin|cvc|cvv)\b/i;
 
-  A.SETTINGS_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled', 'enabled'];
+  A.SETTINGS_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled', 'enabled', 'snipAskFirst'];
 })();

@@ -17,7 +17,7 @@ const STATIC_MODELS = {
   ]
 };
 
-const ALL_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled'];
+const ALL_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled', 'snipAskFirst'];
 const apiKeyName = p => `${p}ApiKey`;
 
 const $ = id => document.getElementById(id);
@@ -28,6 +28,7 @@ const toggleKeyBtn   = $('toggleKey');
 const ollamaUrlEl    = $('ollamaBaseUrl');
 const userProfileEl  = $('userProfile');
 const fillFormToggle = $('fillFormEnabled');
+const snipAskToggle  = $('snipAskFirst');
 const modelEl        = $('model');
 const saveBtn        = $('save');
 const statusEl       = $('status');
@@ -134,8 +135,9 @@ saveBtn.addEventListener('click', () => {
   // never ride the sync channel to other devices.
   const userProfile     = userProfileEl.value;
   const fillFormEnabled = fillFormToggle.checked;
+  const snipAskFirst    = snipAskToggle.checked;
 
-  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl, fillFormEnabled }, () => {
+  chrome.storage.sync.set({ provider, [apiKeyName(provider)]: apiKey, model, ollamaBaseUrl, fillFormEnabled, snipAskFirst }, () => {
     chrome.storage.local.set({ userProfile }, () => {
       flashStatus('SETTINGS SAVED', 'success');
     });
@@ -163,6 +165,9 @@ chrome.storage.sync.get(ALL_KEYS, async data => {
   apiKeyEl.value          = data[apiKeyName(provider)] || '';
   ollamaUrlEl.value       = data.ollamaBaseUrl || 'http://localhost:11434';
   fillFormToggle.checked  = !!data.fillFormEnabled;
+  // snipAskFirst defaults to true — first-run users get the toolbar with
+  // an Ask input rather than an instant explain. Treat undefined as on.
+  snipAskToggle.checked   = data.snipAskFirst !== false;
 
   setActiveTab(provider);
   applyProvider(provider, data.model);
