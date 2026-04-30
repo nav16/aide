@@ -24,6 +24,10 @@
     snapshotUrl = null;
     drag = null;
     committedRect = null;
+    // Defensive — beginSnip/cancelSnip already restore visibility, but if
+    // teardown is reached via some other path (e.g. an exception during
+    // buildOverlay) we still want our own UI back.
+    if (A.shadowHost) A.shadowHost.style.visibility = '';
     document.removeEventListener('keydown', onKey, true);
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('mouseup',   onMouseUp,   true);
@@ -250,11 +254,34 @@
     });
   }
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.action !== 'beginSnip') return;
-    if (overlay) return;
-    snapshotUrl = msg.dataUrl;
-    if (!snapshotUrl) return;
-    buildOverlay();
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // Hide the entire shadow host — every Aide UI element (focus button,
+    // generate dropdown, explain popup, fill-form preview) lives inside
+    // it, so one toggle covers all of them. Two rAFs guarantee the style
+    // change has actually painted before we ack: rAF #1 flushes the style
+    // write, rAF #2 fires after the next paint. Only then is it safe for
+    // the SW to call captureVisibleTab.
+    if (msg?.action === 'prepSnip') {
+      if (A.shadowHost) A.shadowHost.style.visibility = 'hidden';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try { sendResponse({ ok: true }); } catch {}
+      }));
+      return true; // keep the response channel open for async sendResponse
+    }
+    // SW capture failed (restricted page, etc.) — restore visibility so
+    // the user's Aide UI is not stuck hidden until next page load.
+    if (msg?.action === 'cancelSnip') {
+      if (A.shadowHost) A.shadowHost.style.visibility = '';
+      return;
+    }
+    if (msg?.action === 'beginSnip') {
+      if (overlay) return;
+      snapshotUrl = msg.dataUrl;
+      if (!snapshotUrl) return;
+      // Restore *before* building the overlay — it is a child of the same
+      // shadow host we hid for capture.
+      if (A.shadowHost) A.shadowHost.style.visibility = '';
+      buildOverlay();
+    }
   });
 })();

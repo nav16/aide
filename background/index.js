@@ -43,14 +43,30 @@ function ensureContextMenus() {
 chrome.runtime.onInstalled.addListener(ensureContextMenus);
 chrome.runtime.onStartup.addListener(ensureContextMenus);
 
-// Snip-region: keyboard shortcut → capture the visible tab → tell the top
-// frame to open its overlay with the snapshot painted as background. We do
-// the capture *before* the overlay opens so the user is dragging over the
-// exact pixels the model will receive (page can't repaint, animate, or
-// scroll mid-select). frameId:0 because captureVisibleTab returns one
-// composited image of the whole tab — iframe overlays can't align to it.
+// Snip-region: keyboard shortcut → ask the top frame to hide our own UI
+// (focus button, open dropdowns, prior popups all live inside the shadow
+// host and would otherwise be baked into the snapshot), capture, then
+// tell the frame to restore visibility and open the overlay. We do the
+// capture *before* the overlay opens so the user drags over the exact
+// pixels the model will receive (page can't repaint, animate, or scroll
+// mid-select). frameId:0 because captureVisibleTab returns one composited
+// image of the whole tab — iframe overlays can't align to it.
 async function startSnip(tab) {
   if (!tab?.id) return;
+
+  // Wait for the top frame to acknowledge it has hidden Aide UI and let
+  // a paint settle. If the frame has no listener (extension was just
+  // installed and didn't load yet), lastError fires and we proceed
+  // anyway — capture will still mostly work, just with our UI in it.
+  const prepped = await new Promise((resolve) => {
+    chrome.tabs.sendMessage(
+      tab.id,
+      { action: 'prepSnip' },
+      { frameId: 0 },
+      (res) => { void chrome.runtime.lastError; resolve(!!res?.ok); }
+    );
+  });
+
   let dataUrl;
   try {
     dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
@@ -58,6 +74,14 @@ async function startSnip(tab) {
     // captureVisibleTab fails on chrome://, web store, file:// without flag,
     // and the built-in PDF viewer. Nothing useful to show in those frames.
     console.warn('[aide] snip capture failed:', e?.message || e);
+    if (prepped) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        { action: 'cancelSnip' },
+        { frameId: 0 },
+        () => { void chrome.runtime.lastError; }
+      );
+    }
     return;
   }
   chrome.tabs.sendMessage(

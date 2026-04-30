@@ -263,10 +263,42 @@
 
   // Accepts any rect-like object with top/bottom/left/width fields — both a
   // DOMRect from a Range and the snip-region rect ({top,bottom,left,width})
-  // pass through unchanged.
-  function positionSelPopup(rectLike) {
+  // pass through unchanged. Optional opts.placement:
+  //   'edge' (default) — anchor below or above the rect (text selection).
+  //   'over'           — center the popup on the rect, clamped to viewport.
+  //                      Used for snip explanations where placing beside the
+  //                      region often runs the popup off-screen.
+  function positionSelPopup(rectLike, opts) {
     const r = rectLike;
     const popW = 280;
+    const placement = opts?.placement || 'edge';
+
+    if (placement === 'over') {
+      const margin = 6;
+      const maxAvailableH = window.innerHeight - 2 * margin;
+      // Use a conservative height estimate to compute initial vertical
+      // placement; the popup body will internally scroll if the streamed
+      // content turns out longer than this.
+      const estimatedH = Math.min(maxAvailableH, 460);
+
+      const cx = r.left + (r.width  / 2);
+      const cy = r.top  + (r.height / 2);
+
+      let left = cx - popW / 2;
+      if (left < margin) left = margin;
+      if (left + popW > window.innerWidth - margin) left = window.innerWidth - popW - margin;
+
+      let top = cy - estimatedH / 2;
+      if (top + estimatedH > window.innerHeight - margin) top = window.innerHeight - estimatedH - margin;
+      if (top < margin) top = margin;
+
+      selPopup.style.left      = `${left}px`;
+      selPopup.style.top       = `${top}px`;
+      selPopup.style.bottom    = 'auto';
+      selPopup.style.maxHeight = `${maxAvailableH}px`;
+      return;
+    }
+
     const estimatedH = Math.min(window.innerHeight * 0.5 + 80, 460);
     let left = r.left + (r.width / 2) - (popW / 2);
     if (left < 6) left = 6;
@@ -670,7 +702,7 @@
     nextBtn.classList.add('hidden');
     followupInput.value = '';
 
-    positionSelPopup(rect);
+    positionSelPopup(rect, { placement: 'over' });
     selPopup.style.display = 'block';
 
     const settings = await A.getSettings();
