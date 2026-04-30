@@ -198,7 +198,7 @@
     const typeEl = selPopup.querySelector('.aif-sel-type');
     const bodyEl = selPopup.querySelector('.aif-sel-body');
 
-    const typeMap = { explain: 'EXPLAIN', word: 'DEFINE', followup: 'FOLLOW-UP' };
+    const typeMap = { explain: 'EXPLAIN', word: 'DEFINE', followup: 'FOLLOW-UP', image: 'IMAGE' };
     typeEl.textContent = typeMap[v.kind] || 'FOLLOW-UP';
 
     let html = null;
@@ -207,7 +207,18 @@
     }
     if (!html) {
       const qHtml = v.q ? `<div class="aif-sel-q">${escapeHtml(v.q)}</div>` : '';
-      html = qHtml + renderMarkdown(v.a || '');
+      // Image views show a small thumbnail of the snip above the streamed
+      // prose. The prose is wrapped in a stable `.aif-img-prose` child so
+      // openImageExplain's livePaint can update text without remounting the
+      // <img> on every rAF tick.
+      const imgHtml = v.kind === 'image' && v.image
+        ? `<img class="aif-img-thumb" alt="snip" src="${v.image}">`
+        : '';
+      const proseHtml = renderMarkdown(v.a || '');
+      const wrappedProse = v.kind === 'image'
+        ? `<div class="aif-img-prose">${proseHtml}</div>`
+        : proseHtml;
+      html = qHtml + imgHtml + wrappedProse;
     }
     bodyEl.innerHTML = html;
     bodyEl.className = 'aif-sel-body';
@@ -250,8 +261,11 @@
     }
   }
 
-  function positionSelPopup(range) {
-    const r = range.getBoundingClientRect();
+  // Accepts any rect-like object with top/bottom/left/width fields — both a
+  // DOMRect from a Range and the snip-region rect ({top,bottom,left,width})
+  // pass through unchanged.
+  function positionSelPopup(rectLike) {
+    const r = rectLike;
     const popW = 280;
     const estimatedH = Math.min(window.innerHeight * 0.5 + 80, 460);
     let left = r.left + (r.width / 2) - (popW / 2);
@@ -353,7 +367,7 @@
     // when the menu forces a different kind so a "Define" click after a
     // running "Explain" actually swaps the answer.
     if (selPopup.style.display === 'block' && selPopup.dataset.selText === text && !forcedKind) {
-      positionSelPopup(range);
+      positionSelPopup(range.getBoundingClientRect());
       return;
     }
 
@@ -375,7 +389,7 @@
     nextBtn.classList.add('hidden');
     followupInput.value = '';
 
-    positionSelPopup(range);
+    positionSelPopup(range.getBoundingClientRect());
     selPopup.style.display = 'block';
 
     const settings = await A.getSettings();
@@ -612,4 +626,102 @@
       checkSelection({ forcedKind: msg.kind });
     }
   });
+
+  // ---- Image / snip ----
+  // Public entry point for the snip flow: positions the popup near the
+  // cropped region, streams a vision explanation, and seeds the views with
+  // an image-kind entry. Follow-ups continue through the existing followup
+  // path (text-only — image is anchored in turn 0 via the assistant's first
+  // description; v2 may re-attach the image bytes on follow-up turns).
+  async function openImageExplain(rect, imageDataUrl, userQuestion) {
+    if (!A.enabled) return;
+    if (!imageDataUrl) return;
+
+    A.selReqId++;
+    const myReqId = A.selReqId;
+    if (A.lastStream) { try { A.lastStream.cancel(); } catch {} A.lastStream = null; }
+
+    const bodyEl = selPopup.querySelector('.aif-sel-body');
+    const typeEl = selPopup.querySelector('.aif-sel-type');
+
+    typeEl.textContent = 'IMAGE';
+    // Mount the thumbnail (and the question, if the user typed one in the
+    // snip toolbar) immediately so the popup never shows a bare loading
+    // spinner with no visual confirmation of what's being analyzed. The
+    // prose container is a stable child node that livePaint updates in
+    // place, so the <img> doesn't churn on every streaming tick.
+    const qHtml = userQuestion
+      ? `<div class="aif-sel-q">${escapeHtml(userQuestion)}</div>`
+      : '';
+    bodyEl.innerHTML = qHtml +
+      `<img class="aif-img-thumb" alt="snip" src="${imageDataUrl}">` +
+      `<div class="aif-img-prose loading">···</div>`;
+    // Loading lives on the prose div, not the whole body — otherwise the
+    // pulse animation (parent opacity) would dim the thumbnail too.
+    bodyEl.className = 'aif-sel-body';
+    const proseEl = bodyEl.querySelector('.aif-img-prose');
+    selPopup.dataset.selText      = '[image]';
+    selPopup.dataset.originalText = userQuestion || '[image]';
+    selPopup.dataset.views   = '[]';
+    selPopup.dataset.viewIdx = '0';
+    copyBtn.classList.add('hidden');
+    followupForm.classList.add('hidden');
+    prevBtn.classList.add('hidden');
+    nextBtn.classList.add('hidden');
+    followupInput.value = '';
+
+    positionSelPopup(rect);
+    selPopup.style.display = 'block';
+
+    const settings = await A.getSettings();
+    const apiKey = settings[`${settings.provider}ApiKey`] || '';
+
+    let paintPending = false;
+    let paintLatest  = '';
+    const livePaint = (full) => {
+      paintLatest = full;
+      if (paintPending) return;
+      paintPending = true;
+      requestAnimationFrame(() => {
+        paintPending = false;
+        if (myReqId !== A.selReqId) return;
+        if (selPopup.style.display === 'none') return;
+        // Update only the prose container so the thumbnail and question
+        // (already painted at popup-open) stay mounted across all ticks.
+        proseEl.classList.remove('loading');
+        proseEl.innerHTML = renderMarkdown(paintLatest);
+      });
+    };
+
+    const stream = A.streamExplain({
+      kind: 'image',
+      text: userQuestion || '',
+      image: imageDataUrl,
+      pageTitle: document.title,
+      hostname: location.hostname,
+      provider: settings.provider,
+      apiKey,
+      model: settings.model,
+      ollamaBaseUrl: settings.ollamaBaseUrl
+    }, livePaint);
+    A.lastStream = stream;
+    const response = await stream;
+    if (A.lastStream === stream) A.lastStream = null;
+    if (myReqId !== A.selReqId) return;
+    if (response.cancelled) return;
+    if (selPopup.style.display === 'none') return;
+
+    bodyEl.className = 'aif-sel-body';
+    if (!response.success) {
+      bodyEl.textContent = response.error || 'Failed to fetch.';
+      bodyEl.className = 'aif-sel-body aif-sel-error';
+      return;
+    }
+    const view = { kind: 'image', a: response.text, image: imageDataUrl };
+    if (userQuestion) view.q = userQuestion;
+    writeViews([view]);
+    renderView(0);
+    followupForm.classList.remove('hidden');
+  }
+  A.openImageExplain = openImageExplain;
 })();

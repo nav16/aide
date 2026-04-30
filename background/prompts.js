@@ -12,7 +12,7 @@ export const SYSTEM = [
 // Hard ceilings by call kind. Define output is a small JSON object (~80
 // tokens in practice). The cap is loose enough that any rogue preamble from
 // Gemini before the JSON does not truncate the JSON itself.
-export const MAX_TOKENS = { word: 256, explain: 512, followup: 384 };
+export const MAX_TOKENS = { word: 256, explain: 512, followup: 384, image: 512 };
 
 // Per-call token cap that scales with the input length. A 4-word selection
 // asks for a tiny explanation; a 1k-char passage may want the full ceiling.
@@ -26,7 +26,11 @@ export const MAX_TOKENS = { word: 256, explain: 512, followup: 384 };
 // JSON-shape overhead on top. Scaling by input length here was truncating
 // `definition` mid-string and leaving the popup showing just the word + pos.
 export function tokensForExplain(kind, text) {
-  if (kind === 'word') return MAX_TOKENS.word;
+  if (kind === 'word')  return MAX_TOKENS.word;
+  // Image complexity is not correlated with input-text length (the user
+  // question is often empty or one short line) — use the full ceiling so
+  // the model can describe a dense screenshot without truncating.
+  if (kind === 'image') return MAX_TOKENS.image;
   const len = (text || '').length;
   const ceil = MAX_TOKENS[kind] || MAX_TOKENS.explain;
   const floor = kind === 'followup' ? 128 : 96;
@@ -79,7 +83,7 @@ export function tokensForField(ctx) {
 // fitting maxChars). Define is dictionary-precision — low temp keeps the
 // part-of-speech and sense stable across calls. Explain wants natural prose.
 // Followup slightly looser to avoid parroting prior answer verbatim.
-export const TEMPERATURE = { form: 0.3, word: 0.2, explain: 0.5, followup: 0.6 };
+export const TEMPERATURE = { form: 0.3, word: 0.2, explain: 0.5, followup: 0.6, image: 0.4 };
 
 // Stop tokens for fields that should never contain newlines. textarea and
 // contenteditable allow multi-line, so no stop there. Helps when the model
@@ -340,11 +344,32 @@ export function userMsg(ctx, userPrompt, pageTitle) {
   return lines.join('\n');
 }
 
+export function imagePrompts(userText, pageTitle, hostname) {
+  const pageLine = hostname
+    ? `Page context: "${pageTitle}" (${hostname})`
+    : `Page context: "${pageTitle}"`;
+  const ask = (userText || '').trim();
+  return {
+    system: [
+      'You are a helpful explainer for screenshots.',
+      'Describe what the image shows clearly and concisely.',
+      'If text is visible, transcribe the relevant parts and explain them.',
+      'Use the page context (domain + title) to disambiguate jargon.',
+      'Match length to complexity: 2-5 sentences for typical screenshots; longer only when the user asks for it.',
+      'Reply in the same language as visible text. No preamble.'
+    ].join('\n'),
+    user: ask
+      ? `${pageLine}\nQuestion: ${ask}`
+      : `${pageLine}\nExplain what's shown in this image.`
+  };
+}
+
 export function explainPrompts(kind, text, pageTitle, context, hostname) {
   const pageLine = hostname
     ? `Page context: "${pageTitle}" (${hostname})`
     : `Page context: "${pageTitle}"`;
 
+  if (kind === 'image')    return imagePrompts(text, pageTitle, hostname);
   if (kind === 'followup') {
     const turns = Array.isArray(context?.turns) ? context.turns : [];
     const transcript = turns.length

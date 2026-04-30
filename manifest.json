@@ -3,8 +3,14 @@
   "name": "Aide",
   "version": "1.0.0",
   "description": "AI-powered assistant for filling web form fields and explaining selected text.",
-  "permissions": ["storage", "contextMenus"],
+  "permissions": ["storage", "contextMenus", "activeTab"],
   "host_permissions": ["<all_urls>"],
+  "commands": {
+    "aide-snip": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Aide: snip a region to explain"
+    }
+  },
   "background": {
     "service_worker": "background/index.js",
     "type": "module"
@@ -33,6 +39,7 @@
         "content/fields.js",
         "content/ui.js",
         "content/selection.js",
+        "content/snip.js",
         "content/main.js"
       ],
       "run_at": "document_idle",

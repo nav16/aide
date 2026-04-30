@@ -577,3 +577,134 @@
   border-left: 2px solid rgba(226,255,90,0.35);
   word-break: break-word;
 }
+
+/* ── Snip overlay ── */
+
+.aif-snip-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background-size: 100% 100%;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.aif-snip-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+/* While dragging, the rect punches a hole in the dim layer via an outward
+   box-shadow that paints over everything outside its bounds. dimEl is hidden
+   on mousedown so the two layers don't double-darken the page. */
+.aif-snip-rect {
+  position: absolute;
+  display: none;
+  border: 1px solid rgba(226, 255, 90, 0.95);
+  pointer-events: none;
+}
+.aif-snip-rect.aif-snip-rect-active {
+  display: block;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+}
+
+.aif-snip-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  background: rgba(11, 11, 13, 0.92);
+  color: rgba(226, 255, 90, 0.95);
+  border: 1px solid rgba(226, 255, 90, 0.3);
+  border-radius: 4px;
+  font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  pointer-events: none;
+}
+
+/* Floating toolbar shown after a snip rectangle is committed. Anchored to
+   the rect via JS-set top/left; sits above the rect's box-shadow because it
+   is appended after rectEl in DOM order. */
+.aif-snip-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(13, 13, 16, 0.97);
+  border: 1px solid rgba(226, 255, 90, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  max-width: min(440px, calc(100vw - 24px));
+  z-index: 1;
+}
+
+.aif-snip-tb-btn {
+  border: 1px solid transparent;
+  background: rgba(226, 255, 90, 0.12);
+  color: rgba(226, 255, 90, 0.95);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font: inherit;
+  line-height: 1.2;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.aif-snip-tb-btn:hover {
+  background: rgba(226, 255, 90, 0.22);
+  border-color: rgba(226, 255, 90, 0.4);
+}
+
+.aif-snip-tb-explain { background: rgba(226, 255, 90, 0.2); font-weight: 500; }
+
+.aif-snip-tb-input {
+  flex: 1 1 220px;
+  min-width: 160px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.aif-snip-tb-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.aif-snip-tb-input:focus { border-color: rgba(226, 255, 90, 0.55); }
+
+.aif-snip-tb-submit,
+.aif-snip-tb-close {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 4px 8px;
+}
+.aif-snip-tb-submit:hover { color: rgba(226, 255, 90, 0.95); background: rgba(226, 255, 90, 0.12); }
+.aif-snip-tb-close:hover  { color: rgba(255, 120, 120, 0.95); background: rgba(255, 120, 120, 0.12); }
+
+/* Image-kind view thumbnail inside the explain popup. */
+.aif-img-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  margin: 0 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+/* Stable prose container for streamed image-kind text. Loading variant
+   pulses just the dots so the thumbnail above stays at full brightness
+   (parent-opacity animations would compound across the whole subtree). */
+.aif-img-prose {
+  word-break: break-word;
+}
+.aif-img-prose.loading {
+  color: rgba(226, 255, 90, 0.5);
+  letter-spacing: 0.2em;
+  animation: aif-pulse 1s ease-in-out infinite;
+}

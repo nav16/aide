@@ -43,6 +43,39 @@ function ensureContextMenus() {
 chrome.runtime.onInstalled.addListener(ensureContextMenus);
 chrome.runtime.onStartup.addListener(ensureContextMenus);
 
+// Snip-region: keyboard shortcut → capture the visible tab → tell the top
+// frame to open its overlay with the snapshot painted as background. We do
+// the capture *before* the overlay opens so the user is dragging over the
+// exact pixels the model will receive (page can't repaint, animate, or
+// scroll mid-select). frameId:0 because captureVisibleTab returns one
+// composited image of the whole tab — iframe overlays can't align to it.
+async function startSnip(tab) {
+  if (!tab?.id) return;
+  let dataUrl;
+  try {
+    dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
+  } catch (e) {
+    // captureVisibleTab fails on chrome://, web store, file:// without flag,
+    // and the built-in PDF viewer. Nothing useful to show in those frames.
+    console.warn('[aide] snip capture failed:', e?.message || e);
+    return;
+  }
+  chrome.tabs.sendMessage(
+    tab.id,
+    { action: 'beginSnip', dataUrl },
+    { frameId: 0 },
+    () => { void chrome.runtime.lastError; }
+  );
+}
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command !== 'aide-snip') return;
+  if (tab?.id) { startSnip(tab); return; }
+  chrome.tabs.query({ active: true, currentWindow: true }, ([t]) => {
+    if (t?.id) startSnip(t);
+  });
+});
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
   const kind = info.menuItemId === 'aide-define'  ? 'word'
@@ -221,6 +254,14 @@ async function handleExplain(req, signal, onDelta) {
   if (!req.provider) throw new Error('No provider configured. Open extension settings.');
   if (req.provider !== 'ollama' && !req.apiKey) throw new Error('API key not set. Open extension popup.');
   const { system, user } = explainPrompts(req.kind, req.text, req.pageTitle, req.context, req.hostname);
+  // Pull image bytes off the data URL for vision calls. Providers each
+  // adapt {mimeType, base64} into their own multimodal message shape;
+  // keeping the parsed shape here means providers never touch data URLs.
+  let images = null;
+  if (req.kind === 'image' && req.image) {
+    const m = String(req.image).match(/^data:([^;]+);base64,(.+)$/);
+    if (m) images = [{ mimeType: m[1], base64: m[2] }];
+  }
   const raw = await callProvider({
     provider: req.provider,
     apiKey:   req.apiKey,
@@ -228,6 +269,7 @@ async function handleExplain(req, signal, onDelta) {
     baseUrl:  req.ollamaBaseUrl,
     user,
     system:      withTodayDate(system),
+    images,
     maxTokens:   tokensForExplain(req.kind, req.text),
     temperature: TEMPERATURE[req.kind] ?? TEMPERATURE.explain,
     // Native structured-output mode for define. Each provider wires this to
@@ -238,7 +280,10 @@ async function handleExplain(req, signal, onDelta) {
     // jsonSchema is set so define stays buffered (partial JSON is useless
     // to paint).
     onDelta,
-    timeoutMs:   60000
+    // Vision calls upload base64 image bytes (often hundreds of KB) and the
+    // model's first-token latency runs higher; bump the timeout so retina
+    // screenshots over slower links don't trip the 60s default.
+    timeoutMs:   req.kind === 'image' ? 90000 : 60000
   }, signal);
   return req.kind === 'word' ? cleanDefineOutput(raw) : raw;
 }

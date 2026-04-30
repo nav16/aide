@@ -2,7 +2,7 @@ import { fetchWithRetry } from '../lib/retry.js';
 import { extractError } from '../lib/http.js';
 import { readStreamLines } from '../lib/streaming.js';
 
-export async function claude({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, onDelta, signal, timeoutMs }) {
+export async function claude({ apiKey, model, user, system, userProfile, maxTokens, temperature, stop, jsonSchema, images, onDelta, signal, timeoutMs }) {
   // Claude has no JSON-mode flag; tool-use with tool_choice forces the model
   // to emit a tool_use block whose `input` is a JSON object matching the
   // declared schema. We extract that and stringify so callers see plain JSON.
@@ -49,7 +49,22 @@ export async function claude({ apiKey, model, user, system, userProfile, maxToke
       }
       return blocks;
     })(),
-    messages: [{ role: 'user', content: user }],
+    // Anthropic accepts both `content: "<string>"` and an array of typed
+    // blocks. The array form is required to interleave image + text for
+    // vision calls; we keep the string shape for plain text so unrelated
+    // calls don't change wire format (and stay diff-clean against caches).
+    messages: [{
+      role: 'user',
+      content: images?.length
+        ? [
+            ...images.map(img => ({
+              type: 'image',
+              source: { type: 'base64', media_type: img.mimeType, data: img.base64 }
+            })),
+            { type: 'text', text: user }
+          ]
+        : user
+    }],
     ...(stream ? { stream: true } : {})
   };
 
