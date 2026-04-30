@@ -7,6 +7,7 @@
     'input[type="text"]', 'input[type="email"]', 'input[type="search"]',
     'input[type="url"]', 'input[type="tel"]', 'input[type="number"]',
     'textarea', 'input:not([type])',
+    'select',
     '[contenteditable="true"]', '[contenteditable=""]',
     '[contenteditable="plaintext-only"]',
     '[role="textbox"]'

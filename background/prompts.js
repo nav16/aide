@@ -61,6 +61,10 @@ export function tokensForField(ctx) {
   else if (t === 'email' || t === 'url' || t === 'tel')    cap = 32;
   else if (t === 'date'  || t === 'time' || t === 'month' ||
            t === 'week'  || t === 'datetime-local')        cap = 16;
+  // Select returns one option label/value verbatim — even the longest
+  // country names fit comfortably in 64 tokens. Combobox is the same
+  // shape (one option from a hidden list).
+  else if (t === 'select' || t === 'combobox')             cap = 64;
   else if (longForm)                                       cap = 1024;
   else                                                     cap = 96;
 
@@ -241,6 +245,7 @@ const FILL_FORM_SYSTEM = [
   'Keep values consistent across the form (first/last/full name, email, phone, address all describe the same person).',
   'If a field maps to the User profile, use its value verbatim. Never invent profile data — for non-required fields without a profile match return ""; for required fields without a match emit a plausible value of the right shape.',
   'For email/url/tel/number/date/time emit a single valid value of exactly that format. Single-line fields: no newlines. Concise beats truncated.',
+  'For type=select with an options=[...] list: return one of the option strings EXACTLY as listed. Never invent values not in the list.',
   'Example: {"fills":[{"key":"f0","value":"Jane Doe"},{"key":"f1","value":"jane@example.com"}]}'
 ].join('\n');
 
@@ -262,6 +267,15 @@ export function fillFormPrompts(fields, pageTitle, hostname) {
     if (f.minChars)     parts.push(`minChars=${f.minChars}`);
     if (f.describedBy)  parts.push(`help="${q(f.describedBy)}"`);
     if (f.currentValue) parts.push(`currentValue="${q(f.currentValue.slice(0, 80))}"`);
+    if (f.options && f.options.length) {
+      // For select fields in fillForm, list options inline so the model
+      // can pick from them. Cap at 30 to keep the prompt manageable when
+      // a form has multiple long selects (e.g., country + state +
+      // language). Long option labels get clipped via q().
+      const opts = f.options.slice(0, 30).map(o => `"${q(o.label || o.value)}"`).join(', ');
+      parts.push(`options=[${opts}]`);
+      if (f.options.length > 30) parts.push(`optionsTruncated=yes`);
+    }
     lines.push('- ' + parts.join(' | '));
   }
   lines.push('Generate values for ALL field keys above. One entry per key.');
@@ -286,10 +300,33 @@ export function userMsg(ctx, userPrompt, pageTitle) {
   if (ctx.min != null)  lines.push(`Min value: ${ctx.min}`);
   if (ctx.max != null)  lines.push(`Max value: ${ctx.max}`);
   if (ctx.step != null) lines.push(`Step: ${ctx.step}`);
+  if (ctx.options && ctx.options.length) {
+    // Native <select>: pass the option list and constrain the model to
+    // pick one. Output rules at the SYSTEM level cover "no preamble";
+    // the matching code in fields.js insertIntoField is also tolerant
+    // (handles label-vs-value, partial match, wrapping quotes), so the
+    // important thing here is the model picks SOMETHING from this list
+    // and not invents a new value.
+    lines.push('Options (pick exactly ONE — return the label or value EXACTLY as listed, nothing else):');
+    for (const o of ctx.options) {
+      if (o.label && o.value && o.label !== o.value) {
+        lines.push(`- ${o.label}  (value: ${o.value})`);
+      } else {
+        lines.push(`- ${o.label || o.value}`);
+      }
+    }
+  } else if (ctx.inputType === 'combobox') {
+    // ARIA combobox (React Select / MUI / Radix etc): options live in
+    // a portal that's only mounted when open, so we can't enumerate
+    // them up front. Tell the model to emit a single short value; the
+    // page will type it and click the matching option.
+    lines.push('This field is an autocomplete combobox. Return ONLY the value the user likely wants — a single short line, no quotes, no explanation. The page will match it against available options.');
+  }
   if (ctx.currentValue) {
     // Show the draft on its own block so the model treats it as material to
     // continue/refine, not as part of the instruction.
-    lines.push('Current draft (continue or refine; do not duplicate):');
+    const label = ctx.inputType === 'select' ? 'Currently selected' : 'Current draft (continue or refine; do not duplicate)';
+    lines.push(`${label}:`);
     lines.push(ctx.currentValue);
   }
   if (ctx.nearbyText) {

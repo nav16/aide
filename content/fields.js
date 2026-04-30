@@ -11,7 +11,7 @@
   A.attachedFields = new WeakSet();
 
   A.isContentEditable = function (el) {
-    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return false;
     const ce = el.getAttribute('contenteditable');
     if (ce === 'true' || ce === '' || ce === 'plaintext-only') return true;
     // role="textbox" on a non-input element — ARIA widget, treat like
@@ -108,8 +108,23 @@
     return p ? p.trim() : '';
   }
 
+  // ARIA combobox pattern (React Select, MUI Autocomplete, Radix, Headless
+  // UI, Downshift). The visible "input" is a real <input> with
+  // role="combobox" + aria-haspopup; options render in a portal listbox
+  // only when open. Different from native <select>: setting `value`
+  // doesn't pick an option — we have to type and then click a
+  // [role="option"] that the lib renders in response to the typed text.
+  function isComboboxInput(field) {
+    if (field.tagName !== 'INPUT') return false;
+    if (field.getAttribute('role') !== 'combobox') return false;
+    const aha = field.getAttribute('aria-haspopup');
+    return aha === 'listbox' || aha === 'true';
+  }
+
   function extractFieldType(field) {
     if (field.tagName === 'TEXTAREA') return 'textarea';
+    if (field.tagName === 'SELECT')   return 'select';
+    if (isComboboxInput(field))       return 'combobox';
     if (A.isContentEditable(field)) return 'contenteditable';
     return (field.getAttribute('type') || 'text').toLowerCase();
   }
@@ -297,12 +312,42 @@
 
     ctx.inputType = extractFieldType(field);
 
-    // Current draft, if any. Lets the model continue/refine instead of
-    // discarding what the user already typed. Cap at 2k chars so we don't
-    // dump entire essays into the prompt.
-    const currentValue = ctx.inputType === 'contenteditable'
-      ? (field.innerText || field.textContent || '').trim()
-      : (field.value || '').trim();
+    // Native <select>: enumerate options and pass to the model so it can
+    // pick one. Cap at 200 entries — the longest realistic select is a
+    // ~250-country list, and the marginal value of seeing "Vatican City"
+    // and "Wallis and Futuna" past the first 200 is essentially nil.
+    // Skip the leading empty/placeholder option some forms use as a "—
+    // select —" prompt; the model treats it as a no-op anyway and
+    // including it confuses the constrained-choice instruction.
+    if (ctx.inputType === 'select') {
+      const options = [];
+      for (const opt of field.options) {
+        const value = opt.value;
+        const label = (opt.textContent || '').trim();
+        if (!value && !label) continue;
+        // Drop the conventional placeholder ("", "Select…") at index 0.
+        if (options.length === 0 && !value && /^(select|choose|--)/i.test(label)) continue;
+        options.push({ value, label });
+        if (options.length >= 200) break;
+      }
+      if (options.length) ctx.options = options;
+    }
+
+    // Current draft / selected value. Lets the model continue/refine
+    // instead of discarding what the user already typed (or chose).
+    // Cap at 2k chars so we don't dump entire essays into the prompt.
+    let currentValue;
+    if (ctx.inputType === 'contenteditable') {
+      currentValue = (field.innerText || field.textContent || '').trim();
+    } else if (ctx.inputType === 'select') {
+      // For a select, currentValue should be the LABEL of the selected
+      // option, not the raw value — labels carry meaning ("United
+      // States" vs "us") that the model can reason about.
+      const sel = field.selectedOptions?.[0];
+      currentValue = sel && sel.value ? (sel.textContent || sel.value).trim() : '';
+    } else {
+      currentValue = (field.value || '').trim();
+    }
     if (currentValue) {
       ctx.currentValue = currentValue.length > 2000 ? currentValue.slice(0, 2000) + '…' : currentValue;
     }
@@ -465,6 +510,7 @@
       // the dropdown header ("Field: First name · Ollama · ✕").
       if (A.dropdown?.contains(f) || f === A.btn) return false;
       if ((f.tagName === 'INPUT' || f.tagName === 'TEXTAREA') && (f.readOnly || f.disabled)) return false;
+      if (f.tagName === 'SELECT' && f.disabled) return false;
       if (A.isSensitiveField(f)) return false;
       // Inner-editable check matches attach() — outer wrappers delegate to a
       // child editable, instrumenting them corrupts the editor's DOM model.
@@ -498,6 +544,94 @@
   }
 
   A.insertIntoField = function (field, text) {
+    if (field.tagName === 'SELECT') {
+      // Match the model's output against the option list. Try in order:
+      //   1. Exact value match (case-insensitive)
+      //   2. Exact label match (case-insensitive)
+      //   3. Substring match either direction (handles "United States"
+      //      vs "United States of America", or model wrapping in quotes)
+      // Bail silently if nothing fits — better to leave the select alone
+      // than to pick a wrong option and have the user submit it.
+      const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      // Strip wrapping quotes/backticks the model sometimes adds.
+      const stripped = String(text || '').trim().replace(/^["'`“‘]+|["'`”’]+$/g, '');
+      const target = norm(stripped);
+      if (!target) return;
+
+      const opts = Array.from(field.options);
+      let chosen = opts.find(o => norm(o.value)       === target)
+                || opts.find(o => norm(o.textContent) === target);
+      if (!chosen) {
+        chosen = opts.find(o => {
+          const v = norm(o.value), l = norm(o.textContent);
+          return (l && (target.includes(l) || l.includes(target)))
+              || (v && (target.includes(v) || v.includes(target)));
+        });
+      }
+      if (!chosen) return;
+
+      // Set via the prototype setter when available — frameworks (React,
+      // Vue) intercept the setter on element instances to track state, so
+      // a plain assignment can land outside their model. Same pattern we
+      // use for input/textarea.
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+      if (setter) setter.call(field, chosen.value);
+      else field.value = chosen.value;
+      // Also flip selectedIndex — guards against frameworks that read
+      // selectedIndex rather than value (rare but exists).
+      field.selectedIndex = chosen.index;
+      field.dispatchEvent(new Event('input',  { bubbles: true, cancelable: true, composed: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
+      return;
+    }
+
+    if (isComboboxInput(field)) {
+      // ARIA combobox: type the value, wait for the listbox to render
+      // filtered [role="option"] entries, click the best match. Single
+      // setTimeout is enough — react-select / MUI / Radix all render
+      // synchronously on the next microtask after the input event.
+      // 250ms covers slow devices and animation frames.
+      const stripped = String(text || '').trim().replace(/^["'`“‘]+|["'`”’]+$/g, '');
+      if (!stripped) return;
+
+      field.focus();
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(field, stripped);
+      else field.value = stripped;
+      field.dispatchEvent(new Event('input',  { bubbles: true, cancelable: true, composed: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
+
+      setTimeout(() => {
+        // aria-controls points the combobox at its listbox when set —
+        // scope the option search to that listbox so we don't pick from
+        // an unrelated combobox elsewhere on the page. Fall back to a
+        // global query when aria-controls is missing or stale (some
+        // libs only set it after open).
+        const listboxId = field.getAttribute('aria-controls');
+        const scope = (listboxId && document.getElementById(listboxId)) || document;
+        const opts = Array.from(scope.querySelectorAll('[role="option"]'))
+          .filter(o => o.offsetParent !== null); // skip hidden/virtualized entries
+        if (!opts.length) return; // listbox didn't open or no matches; leave typed text
+
+        const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const target = norm(stripped);
+        let chosen = opts.find(o => norm(o.textContent) === target);
+        if (!chosen && target.length > 1) chosen = opts.find(o => norm(o.textContent).includes(target));
+        if (!chosen && target.length > 1) chosen = opts.find(o => target.includes(norm(o.textContent)) && norm(o.textContent).length > 1);
+        // Last resort: the first visible option, which combobox libs
+        // typically auto-highlight as the best match for what was typed.
+        if (!chosen) chosen = opts[0];
+
+        // React Select selects on mousedown (not click); MUI / Radix /
+        // Headless UI accept either. Dispatch the full mouse sequence so
+        // every library's handler fires.
+        chosen.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+        chosen.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, button: 0 }));
+        chosen.click();
+      }, 250);
+      return;
+    }
+
     if (A.isContentEditable(field)) {
       // Defer to next frame so the dropdown's hide() and our previous focus
       // changes settle before we re-focus and operate on the selection range.
@@ -748,6 +882,7 @@
     if (A.dropdown.contains(field) || field === A.btn) return; // never instrument our own UI
     if ((field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') &&
         (field.readOnly || field.disabled)) return;
+    if (field.tagName === 'SELECT' && field.disabled) return;
     if (A.isSensitiveField(field)) return;
     // For contenteditable: attach only to the innermost editable node —
     // the one with no contenteditable children. Outer wrappers (Draft.js root,
