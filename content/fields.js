@@ -586,49 +586,64 @@
     }
 
     if (isComboboxInput(field)) {
-      // ARIA combobox: type the value, wait for the listbox to render
-      // filtered [role="option"] entries, click the best match. Single
-      // setTimeout is enough — react-select / MUI / Radix all render
-      // synchronously on the next microtask after the input event.
-      // 250ms covers slow devices and animation frames.
+      // ARIA combobox: setting `value` alone doesn't pick an option —
+      // we have to open the listbox, type to filter, and click a
+      // [role="option"]. Strategy:
+      //   1. Click the input to open the menu (react-select toggles
+      //      on click; MUI/Radix/Headless UI also open on click).
+      //   2. Type the text via the prototype setter + 'input' event so
+      //      the lib filters its options.
+      //   3. After ~300ms, scan for [role=option] (scoped to
+      //      aria-controls's listbox if set). Pick the best match.
+      //   4. Dispatch mousedown+mouseup+click — react-select selects
+      //      on mousedown, others on click.
+      // Logs prefixed [Aide][combobox] so we can diagnose if the
+      // listbox doesn't open or no options match.
       const stripped = String(text || '').trim().replace(/^["'`“‘]+|["'`”’]+$/g, '');
       if (!stripped) return;
+      console.log('[Aide][combobox] insert text:', stripped, 'into', field);
 
       field.focus();
+      // Open the menu. react-select-flavored libs respond to click on
+      // the input itself; some pure-W3C combobox impls require Alt+Down
+      // or Enter, but click covers the common case.
+      field.click();
+
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-      if (setter) setter.call(field, stripped);
-      else field.value = stripped;
-      field.dispatchEvent(new Event('input',  { bubbles: true, cancelable: true, composed: true }));
-      field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
+      // setTimeout(0) so the click() handler runs before we set value —
+      // react-select's onClick opens the menu BEFORE its onChange fires,
+      // and changing the value mid-click can race the open path.
+      setTimeout(() => {
+        if (setter) setter.call(field, stripped);
+        else field.value = stripped;
+        field.dispatchEvent(new Event('input',  { bubbles: true, cancelable: true, composed: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
+        console.log('[Aide][combobox] typed value, aria-expanded=', field.getAttribute('aria-expanded'));
+      }, 0);
 
       setTimeout(() => {
-        // aria-controls points the combobox at its listbox when set —
-        // scope the option search to that listbox so we don't pick from
-        // an unrelated combobox elsewhere on the page. Fall back to a
-        // global query when aria-controls is missing or stale (some
-        // libs only set it after open).
         const listboxId = field.getAttribute('aria-controls');
         const scope = (listboxId && document.getElementById(listboxId)) || document;
-        const opts = Array.from(scope.querySelectorAll('[role="option"]'))
-          .filter(o => o.offsetParent !== null); // skip hidden/virtualized entries
-        if (!opts.length) return; // listbox didn't open or no matches; leave typed text
+        const all = Array.from(scope.querySelectorAll('[role="option"]'));
+        const opts = all.filter(o => o.offsetParent !== null);
+        console.log('[Aide][combobox] listboxId=', listboxId, 'optsTotal=', all.length, 'optsVisible=', opts.length);
+        if (!opts.length) {
+          console.log('[Aide][combobox] no visible options, leaving typed text');
+          return;
+        }
 
         const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
         const target = norm(stripped);
         let chosen = opts.find(o => norm(o.textContent) === target);
         if (!chosen && target.length > 1) chosen = opts.find(o => norm(o.textContent).includes(target));
         if (!chosen && target.length > 1) chosen = opts.find(o => target.includes(norm(o.textContent)) && norm(o.textContent).length > 1);
-        // Last resort: the first visible option, which combobox libs
-        // typically auto-highlight as the best match for what was typed.
-        if (!chosen) chosen = opts[0];
+        if (!chosen) chosen = opts[0]; // first visible — combobox libs auto-highlight best match
 
-        // React Select selects on mousedown (not click); MUI / Radix /
-        // Headless UI accept either. Dispatch the full mouse sequence so
-        // every library's handler fires.
+        console.log('[Aide][combobox] chosen option:', chosen.textContent.trim().slice(0, 60));
         chosen.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
         chosen.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, button: 0 }));
         chosen.click();
-      }, 250);
+      }, 350);
       return;
     }
 
