@@ -142,7 +142,12 @@
   };
 
   A.openDropdown = function (field) {
-    const ctx = A.extractFieldContext(field);
+    // Light extraction here — we only render label + maxChars in the header.
+    // The expensive bits (nearbyText, especially Gmail's [role="main"]
+    // innerText walk) only need to run once per generate, at click time.
+    // Without skipNearby this fired twice on Gmail and forced an extra
+    // layout pass over a 5000+ char thread DOM.
+    const ctx = A.extractFieldContext(field, { skipNearby: true });
     const labelText = ctx.maxChars
       ? `Field: ${ctx.label} · ${ctx.maxChars} chars max`
       : `Field: ${ctx.label}`;
@@ -300,8 +305,11 @@
     // closest('form') walks plus the querySelector('h1...legend') sweep on
     // dense SPA forms. Fieldset legend is still resolved per-field.
     const formScopeContext = fields.length ? A.computeFormScopeContext(fields[0]) : '';
+    // skipNearby: fillForm fields share ancestors, so every field would
+    // compute the same nearbyText blob. Skip it here — the form-level
+    // formContext + per-field descriptors already give the model enough.
     return fields.map((f, i) => {
-      const ctx = A.extractFieldContext(f, { formScopeContext });
+      const ctx = A.extractFieldContext(f, { formScopeContext, skipNearby: true });
       // hostname is per-page, not per-field — drop from the descriptor and
       // pass once at the request level.
       delete ctx.hostname;

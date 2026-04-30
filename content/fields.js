@@ -123,6 +123,127 @@
     return text.length > 240 ? text.slice(0, 240) + '…' : text;
   }
 
+  // Pull surrounding page text so the model can write contextually — replies
+  // that match the thread's tone, comments that reference the post above,
+  // forum responses that mirror the topic. Heuristic: walk up from the field
+  // and pick the LOWEST ancestor with substantial text content (>= 300 chars).
+  // The smallest qualifying container is usually the conversation/thread/card
+  // boundary; ancestors above that drift into page chrome (sidebars, navs).
+  //
+  // The field's own draft is stripped from the result so we don't re-feed
+  // the user's in-progress text back to the model as "context."
+  //
+  // Limitations:
+  //   - Sites that mount the compose box as a sibling of the thread (Gmail's
+  //     compose dialog floats over the thread, not inside it) won't see the
+  //     thread here. A targeted Gmail extractor would be a separate add.
+  //   - Capped at 1500 chars so we don't blow up the prompt or send a whole
+  //     long article.
+  //   - Requires >= 80 chars after stripping the draft, otherwise returns ''
+  //     (no signal worth the tokens).
+  const NEARBY_MIN_ANCESTOR  = 300;
+  const NEARBY_MIN_OUTPUT    = 80;
+  const NEARBY_MAX_OUTPUT    = 1500;
+  const NEARBY_MAX_HOPS      = 12;
+
+  // Site-specific extractors. Used when ancestor-walking fails because the
+  // compose UI is rendered as a sibling of the thread (Gmail's reply
+  // dialog) or otherwise can't see the surrounding content from inside.
+  // Each function returns the extracted text or '' if nothing usable.
+
+  // Webmail clients put the inline reply box AND the popup composer as
+  // siblings of the message list — walking up from the field never
+  // reaches the thread, so we scan the document instead.
+  //
+  // [role="main"] is the ARIA landmark every accessible webmail client
+  // uses for the reading pane. Inside a thread view it contains:
+  // subject, every visible message (expanded body OR collapsed snippet,
+  // both rendered), and the compose box. innerText respects visibility
+  // so display:none-hidden bodies of collapsed messages don't pad the
+  // result while their snippet previews stay in. The compose draft
+  // itself is in there too but the caller strips it via draft-match.
+  //
+  // Earlier Gmail-specific impl tried per-message containers
+  // (`[data-message-id]`, `.a3s.aiL`, `.y2`). Class names shift between
+  // A/B experiments — single-message detection broke on multi-reply
+  // threads. The landmark approach is variant-proof.
+  //
+  // Known limitation: ProtonMail and iCloud Mail render each message
+  // body inside an isolated <iframe> for security. innerText doesn't
+  // cross frame boundaries, so for those clients we'd capture sender +
+  // subject metadata but not the actual email body. Not in this map
+  // until we add cross-frame extraction.
+  function mainPaneContext() {
+    const main = document.querySelector('[role="main"]');
+    if (!main) return '';
+    return (main.innerText || '').replace(/\s+/g, ' ').trim();
+  }
+
+  const SITE_EXTRACTORS = {
+    'mail.google.com':         mainPaneContext,
+    'outlook.live.com':        mainPaneContext,
+    'outlook.office.com':      mainPaneContext,
+    'outlook.office365.com':   mainPaneContext,
+    'mail.yahoo.com':          mainPaneContext,
+    'mail.aol.com':            mainPaneContext,
+    'app.fastmail.com':        mainPaneContext,
+    'mail.zoho.com':           mainPaneContext
+  };
+
+  function extractNearbyText(field) {
+    const fieldText = (
+      field.value != null ? String(field.value)
+                          : (field.innerText || field.textContent || '')
+    ).trim();
+    const flatField = fieldText.replace(/\s+/g, ' ').trim();
+
+    // 1) Try a site-specific extractor first. These exist for hosts where
+    //    ancestor-walking can't reach the relevant content (webmail).
+    let text = '';
+    const siteFn = SITE_EXTRACTORS[location.hostname];
+    if (siteFn) {
+      try { text = siteFn() || ''; } catch {}
+    }
+
+    // 2) Generic ancestor walk fallback. Used when no site extractor
+    //    matched, or the site extractor returned nothing usable.
+    if (!text) {
+      let cur = field;
+      let chosen = null;
+      for (let i = 0; i < NEARBY_MAX_HOPS; i++) {
+        let next = cur.parentElement;
+        if (!next) {
+          // Cross shadow boundary — fields inside custom-element shadow
+          // roots have no parentElement at the root.
+          const r = cur.getRootNode?.();
+          next = r instanceof ShadowRoot ? r.host : null;
+        }
+        if (!next || next === document.documentElement) break;
+        cur = next;
+        if ((cur.textContent || '').length >= NEARBY_MIN_ANCESTOR) {
+          chosen = cur;
+          break;
+        }
+      }
+      if (!chosen) return '';
+      text = (chosen.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    // Strip the field's own draft so we don't echo the user's in-progress
+    // text back at them. >5 chars threshold avoids over-eager stripping
+    // for tiny drafts ("a", "ok") that could match unrelated occurrences.
+    if (flatField && flatField.length > 5) {
+      const idx = text.indexOf(flatField);
+      if (idx !== -1) {
+        text = (text.slice(0, idx) + ' ' + text.slice(idx + flatField.length))
+          .replace(/\s+/g, ' ').trim();
+      }
+    }
+    if (text.length < NEARBY_MIN_OUTPUT) return '';
+    if (text.length > NEARBY_MAX_OUTPUT) text = text.slice(0, NEARBY_MAX_OUTPUT) + '…';
+    return text;
+  }
+
   // Per-field: fieldset legend / aria-label. Two fields under different
   // fieldsets get different legends ("Personal info" vs "Address"), so this
   // can't be cached across the field loop.
@@ -215,6 +336,18 @@
 
     const form = extractFormContext(field, opts?.formScopeContext);
     if (form && form !== ctx.label) ctx.formContext = form;
+
+    // Surrounding text — only for long-form fields where conversational
+    // context matters. Email/URL/tel/short-text inputs don't benefit from
+    // a thread blob and the extra tokens aren't worth it.
+    // opts.skipNearby is set by buildDescriptors (fillForm) where every
+    // field would compute the same blob from shared ancestors — wasteful
+    // duplicated tokens. fillForm already gets a single formContext.
+    const longForm = ctx.inputType === 'textarea' || ctx.inputType === 'contenteditable';
+    if (longForm && !opts?.skipNearby) {
+      const nearby = extractNearbyText(field);
+      if (nearby) ctx.nearbyText = nearby;
+    }
 
     ctx.hostname = location.hostname;
     return ctx;

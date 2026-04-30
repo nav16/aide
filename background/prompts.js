@@ -292,6 +292,13 @@ export function userMsg(ctx, userPrompt, pageTitle) {
     lines.push('Current draft (continue or refine; do not duplicate):');
     lines.push(ctx.currentValue);
   }
+  if (ctx.nearbyText) {
+    // Surrounding page text (the thread above a reply box, the article above
+    // a comment field, etc.). Marked explicitly as awareness-only so the
+    // model uses it for tone/topic but doesn't paste it back into the field.
+    lines.push('Surrounding page text (for tone/topic awareness only — do NOT echo or quote verbatim):');
+    lines.push(ctx.nearbyText);
+  }
   lines.push(userPrompt ? `Instruction: ${userPrompt}` : 'Generate appropriate content for this field.');
   return lines.join('\n');
 }
