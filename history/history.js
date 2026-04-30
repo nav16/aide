@@ -7,7 +7,8 @@ const KIND_LABELS = {
   word:     'DEFINE',
   followup: 'FOLLOW-UP',
   generate: 'GENERATE',
-  fillForm: 'FILL FORM'
+  fillForm: 'FILL FORM',
+  image:    'IMAGE'
 };
 
 const $ = id => document.getElementById(id);
@@ -73,6 +74,12 @@ function entrySummary(e) {
     const prompt = e.input?.prompt;
     return prompt ? `${label} — ${trySnippet(prompt, 60)}` : label;
   }
+  // For image entries, the question is optional — when the user took the
+  // default explain there's no text to summarize, so fall back to a kind
+  // marker rather than the generic "(no input)" string.
+  if (e.kind === 'image') {
+    return trySnippet(e.input?.text || '', 90) || '(image only)';
+  }
   // explain / word / followup
   return trySnippet(e.input?.text || '', 90) || '(no input)';
 }
@@ -112,7 +119,8 @@ function renderGenericBody(e) {
   const label =
     e.kind === 'word'     ? 'WORD' :
     e.kind === 'followup' ? 'QUESTION' :
-    e.kind === 'generate' ? 'PROMPT' : 'SELECTION';
+    e.kind === 'generate' ? 'PROMPT' :
+    e.kind === 'image'    ? 'QUESTION' : 'SELECTION';
 
   const rows = [];
   rows.push(renderRow('PAGE', e.pageTitle || e.hostname || '—'));
@@ -120,6 +128,15 @@ function renderGenericBody(e) {
   if (e.kind === 'generate') {
     if (e.input?.fieldLabel) rows.push(renderRow('FIELD', e.input.fieldLabel));
     rows.push(renderRow(label, e.input?.prompt || '(no prompt)'));
+  } else if (e.kind === 'image') {
+    if (e.input?.imageThumb) {
+      rows.push(renderRow(
+        'IMAGE',
+        `<img class="hist-img-thumb" src="${escapeHtml(e.input.imageThumb)}" alt="snip">`,
+        { html: true }
+      ));
+    }
+    rows.push(renderRow(label, e.input?.text || '(default explain)'));
   } else {
     rows.push(renderRow(label, e.input?.text || '—'));
   }

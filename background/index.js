@@ -181,7 +181,7 @@ function generateRecord(req, text) {
 
 function explainRecord(req, text) {
   return {
-    kind: req.kind, // 'word' | 'explain' | 'followup'
+    kind: req.kind, // 'word' | 'explain' | 'followup' | 'image'
     hostname: req.hostname || '',
     pageTitle: req.pageTitle || '',
     provider: req.provider,
@@ -189,7 +189,11 @@ function explainRecord(req, text) {
     input: {
       text: req.text || '',
       originalText: req.context?.originalText || '',
-      surrounding:  req.context?.surrounding  || ''
+      surrounding:  req.context?.surrounding  || '',
+      // Image kind only — content script generates a downscaled JPEG so
+      // the history viewer can show what was snipped without storing the
+      // full-resolution crop (would blow chrome.storage.local quota).
+      imageThumb:   req.imageThumb || ''
     },
     output: text
   };

@@ -44,6 +44,16 @@
     overlay = document.createElement('div');
     overlay.className = 'aif-snip-overlay';
     overlay.style.backgroundImage = `url("${snapshotUrl}")`;
+    // captureVisibleTab returns the full layout viewport including the
+    // scrollbar gutter, but the overlay is sized to the content area
+    // (position:fixed inset:0 → clientWidth × clientHeight, excluding
+    // scrollbar). Stretching with background-size:100% 100% squished the
+    // scrollbar pixels in the screenshot into the overlay's right edge,
+    // creating a ghost scrollbar next to the real one. Render the
+    // background at innerWidth × innerHeight CSS pixels instead, so each
+    // screenshot pixel maps 1:1 to its viewport position and the scrollbar
+    // pixels fall outside the overlay's clip.
+    overlay.style.backgroundSize = `${window.innerWidth}px ${window.innerHeight}px`;
 
     dimEl = document.createElement('div');
     dimEl.className = 'aif-snip-dim';
@@ -235,6 +245,20 @@
     const cropBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
     const cropUrl  = await blobToDataUrl(cropBlob);
 
+    // Smaller thumbnail dedicated to history storage. Full crop still goes
+    // to the model and the popup display; storing it in history at
+    // 200 entries × ~150KB would blow the local quota. 160px long edge at
+    // q=0.7 lands around 3-8KB per entry — comfortably under the 5MB
+    // chrome.storage.local cap even at the FIFO ceiling.
+    const thumbMax = 160;
+    const scale = Math.min(1, thumbMax / Math.max(sw, sh));
+    const tw = Math.max(1, Math.round(sw * scale));
+    const th = Math.max(1, Math.round(sh * scale));
+    const thumbCanvas = new OffscreenCanvas(tw, th);
+    thumbCanvas.getContext('2d').drawImage(bitmap, sx, sy, sw, sh, 0, 0, tw, th);
+    const thumbBlob = await thumbCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 });
+    const thumbUrl  = await blobToDataUrl(thumbBlob);
+
     // Anchor the answer popup to the cropped rectangle: pass a DOMRect-like
     // so positionSelPopup can place above/below the snip area, same logic
     // as text-selection.
@@ -248,7 +272,7 @@
     };
     teardown();
     if (typeof A.openImageExplain === 'function') {
-      A.openImageExplain(popupRect, cropUrl, userQuestion || '');
+      A.openImageExplain(popupRect, cropUrl, userQuestion || '', thumbUrl);
     }
   }
 

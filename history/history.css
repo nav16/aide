@@ -354,4 +354,13 @@ body::before {
   line-height: 1.7;
 }
 
+.hist-img-thumb {
+  display: block;
+  max-width: 220px;
+  max-height: 160px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  object-fit: contain;
+}
+
 .hidden { display: none !important; }

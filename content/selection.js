@@ -665,7 +665,7 @@
   // an image-kind entry. Follow-ups continue through the existing followup
   // path (text-only — image is anchored in turn 0 via the assistant's first
   // description; v2 may re-attach the image bytes on follow-up turns).
-  async function openImageExplain(rect, imageDataUrl, userQuestion) {
+  async function openImageExplain(rect, imageDataUrl, userQuestion, imageThumb) {
     if (!A.enabled) return;
     if (!imageDataUrl) return;
 
@@ -729,6 +729,10 @@
       kind: 'image',
       text: userQuestion || '',
       image: imageDataUrl,
+      // Thumbnail rides as a separate field — SW stores it in history
+      // under input.imageThumb so the history viewer can render the snip
+      // without bloating storage with full-resolution crops.
+      imageThumb: imageThumb || '',
       pageTitle: document.title,
       hostname: location.hostname,
       provider: settings.provider,
