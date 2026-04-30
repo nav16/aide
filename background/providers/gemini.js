@@ -69,12 +69,18 @@ export async function gemini({ apiKey, model, user, system, userProfile, maxToke
 }
 
 function sanitizeSchemaForGemini(schema) {
+  // Deep-walk every value: Gemini's OpenAPI subset rejects keys like
+  // additionalProperties / $schema at any nesting depth. Earlier impl only
+  // recursed when the *key name* was 'properties' or 'items', so a
+  // sibling like fillForm's `properties.fills.items.additionalProperties`
+  // slipped through and produced a 400 ("Unknown name 'additionalProperties'
+  // at ...response_schema.properties[0].value.items").
   if (!schema || typeof schema !== 'object') return schema;
   if (Array.isArray(schema)) return schema.map(sanitizeSchemaForGemini);
   const out = {};
   for (const [k, v] of Object.entries(schema)) {
     if (k === 'additionalProperties' || k === '$schema') continue;
-    out[k] = (k === 'properties' || k === 'items') ? sanitizeSchemaForGemini(v) : v;
+    out[k] = sanitizeSchemaForGemini(v);
   }
   return out;
 }

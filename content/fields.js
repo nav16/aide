@@ -379,6 +379,41 @@
         sel.removeAllRanges();
         sel.addRange(preRange);
 
+        // Draft.js (Twitter compose, parts of Reddit / Medium) responds to
+        // synthetic beforeinput events partially: it picks up `event.data`
+        // and visibly inserts text but doesn't preventDefault, so our
+        // `!field.dispatchEvent(ev)` probe always reads false and we fall
+        // through to execCommand. execCommand then dispatches a TRUSTED
+        // beforeinput that Draft.js ALSO handles, producing a second
+        // insertion — visible as "text appears in two spans" on Twitter.
+        // For these editors we skip the synthetic chain entirely and rely
+        // on execCommand's trusted beforeinput, which Draft.js handles
+        // correctly in one application.
+        const isDraftJs = !!(
+          field.querySelector?.('[data-offset-key]') ||
+          field.getAttribute?.('data-offset-key')
+        );
+        if (isDraftJs) {
+          if (text.includes('\n')) {
+            const cleared = document.execCommand('selectAll', false, null) &&
+                            document.execCommand('delete', false, null);
+            if (cleared) {
+              const lines = text.split('\n');
+              lines.forEach((line, i) => {
+                if (i > 0) {
+                  const para = document.execCommand('insertParagraph', false, null);
+                  if (!para) document.execCommand('insertHTML', false, '<br>');
+                }
+                if (line) document.execCommand('insertText', false, line);
+              });
+            }
+          } else {
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, text);
+          }
+          return;
+        }
+
         // 1. beforeinput — future-proof replacement for execCommand. Lexical,
         // modern ProseMirror, Slate, and other editors listen for InputEvents
         // and apply the change through their own reducers, calling
