@@ -8,13 +8,14 @@
 
 ## What it does
 
-Aide injects a lightweight overlay on any page. Select text or focus a form field to unlock three actions:
+Aide injects a lightweight overlay on any page. Select text, focus a form field, or hit a hotkey to unlock four actions:
 
 | Action | Trigger | Result |
 |--------|---------|--------|
 | **Generate** | Focus any input / textarea | Describe what to write → AI fills the field |
 | **Explain** | Select text | Floating summary of the selection |
 | **Define** | Select a word | Definition + example sentence |
+| **Snip** | `Alt+Shift+S` | Drag to crop a region → vision model explains it |
 
 ![Explain](images/explain.png) ![Define](images/define.png)
 
@@ -31,7 +32,7 @@ Switch providers any time from the extension popup — no restart needed.
 | **Gemini** | Gemini 3 Flash, Gemini 3.1 Flash Lite |
 | **Ollama** | Any locally running model (auto-synced) |
 
-Each provider stores its own API key, so you can flip between them without re-pasting credentials.
+Each provider stores its own API key, so you can flip between them without re-pasting credentials. Snip uses vision and routes to the same provider — pick a vision-capable model (Claude, GPT-4o, Gemini, or any Ollama vision model like `llava`).
 
 ---
 
@@ -68,7 +69,13 @@ For Claude: extension calls `api.anthropic.com` directly from the browser, so re
 2. Choose **Explain** for a plain-English summary or **Define** for a dictionary-style entry
 3. Dismiss with `×` or click elsewhere
 
-Follow-ups are supported on any result — ask a clarifying question and the answer streams in place.
+**Snip a region**
+1. Press `Alt+Shift+S` (rebind from `chrome://extensions/shortcuts`)
+2. Drag a rectangle over anything on screen — chart, screenshot, diagram, foreign text
+3. Release to ask the default explain, or type a question in the floating toolbar first
+4. Toggle **Ask first** in Settings to skip the toolbar and run explain immediately on release
+
+Follow-ups are supported on any result — ask a clarifying question and the answer streams in place. Past interactions (text and snips with thumbnails) live in the history viewer, opened from the popup.
 
 ---
 
@@ -97,6 +104,7 @@ aide/
 │   ├── fields.js              # Input/textarea detection + insertion
 │   ├── ui.js                  # Generate dropdown + fill-form preview
 │   ├── selection.js           # Explain / Define / follow-up popup
+│   ├── snip.js                # Region-snip overlay + vision explain
 │   ├── main.js                # Wiring / entry
 │   └── content.css            # Overlay styles (loaded into the shadow root)
 ├── background/                # Service worker (ES module)
