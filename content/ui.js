@@ -8,7 +8,7 @@
   const btn = document.createElement('button');
   btn.className = 'aif-btn';
   btn.setAttribute('aria-label', 'AI Fill');
-  btn.textContent = '✨';
+  btn.textContent = 'a';
   btn.style.display = 'none';
   A.uiRoot.appendChild(btn);
   A.btn = btn;
