@@ -90,7 +90,46 @@
       if (t) return t;
     }
 
-    if (field.name) return A.humanizeName(field.name);
+    // Sibling-label pattern: Ashby, Greenhouse, and similar form frameworks
+    // wrap each field in a question container with a <label> sibling that
+    // isn't tied via for/id. Often the label text itself is wrapped in a
+    // <p>/<span> so `for`-association would be awkward anyway. Walk up a
+    // few levels and pick the closest <label> that precedes the field in
+    // document order — for ancestors holding multiple field/label pairs
+    // (a fieldset, a row), the immediately-preceding label is the right
+    // one. Capping at 4 hops avoids drifting up into page chrome.
+    let scope = field.parentElement;
+    for (let i = 0; scope && i < 4; i++, scope = scope.parentElement) {
+      const labels = scope.querySelectorAll('label');
+      if (!labels.length) continue;
+      // querySelectorAll returns nodes in tree order, so iterating and
+      // overwriting on each preceding match leaves us with the latest
+      // (closest) one. Stop once we hit a label that comes after the
+      // field — every label past it is even further away.
+      let lbl = null;
+      for (const l of labels) {
+        if (l.contains(field)) continue;
+        if (l.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING) {
+          lbl = l;
+        } else {
+          break;
+        }
+      }
+      if (lbl) {
+        const clone = lbl.cloneNode(true);
+        clone.querySelectorAll('input, textarea, select').forEach(e => e.remove());
+        const t = clone.textContent.replace(/\s+/g, ' ').trim();
+        if (t) return t;
+      }
+    }
+
+    if (field.name) {
+      // UUID-style names (Ashby's per-question field IDs, e.g.
+      // e5808184-e9e0-402d-a878-8f8dd07c1fd6) humanize to gibberish — fall
+      // through to "this field" rather than feed the model a hex blob.
+      const isUuidish = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(field.name);
+      if (!isUuidish) return A.humanizeName(field.name);
+    }
 
     // Nearby heading / label text above the field
     const prev = field.previousElementSibling;
