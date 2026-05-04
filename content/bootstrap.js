@@ -118,4 +118,27 @@
   // Append to this when adding new injected UI. Falls back to body for the
   // unlikely case the shadow root failed to attach (older Edge/Safari).
   A.uiRoot = root;
+
+  // Keyboard events are composed: true, so a keystroke in our shadow-root
+  // <input> bubbles into the document. At the document, e.target has been
+  // retargeted to the shadow host (a <div>), so site hotkey libraries
+  // (GitHub, Gmail, Reddit, YouTube, Notion) that skip-when-focused-in-input
+  // don't recognize our input and fire shortcuts on every letter the user
+  // types. Stop printable-character events at the shadow boundary when the
+  // origin is editable. Keep Escape/Tab/Enter/Arrows and modifier combos
+  // flowing so the document-level Escape dismiss in main.js still works.
+  for (const type of ['keydown', 'keypress', 'keyup']) {
+    root.addEventListener(type, (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!e.key || e.key.length !== 1) return;
+      const t = e.composedPath()[0];
+      if (!t || t.nodeType !== 1) return;
+      if (t.isContentEditable ||
+          t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT') {
+        e.stopPropagation();
+      }
+    });
+  }
 })();
