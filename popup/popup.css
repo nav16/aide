@@ -142,6 +142,34 @@ body::before {
   outline-offset: 2px;
 }
 
+/* ── Site row ── */
+.site-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+.site-lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.site-host {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 /* ── Rule ── */
 .rule {
   height: 1px;

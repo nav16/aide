@@ -8,10 +8,12 @@
   // any storage change so popup edits take effect without a page reload.
   A.cachedSettings = null;
 
-  // Synchronous mirror of the global enable toggle. focusin and selectionchange
-  // handlers fire too often to await storage on every event, so we keep this
-  // boolean fresh and read it inline. Default true so the brief window before
-  // the cache warms doesn't black-hole the UI.
+  // Synchronous mirrors of the two enable dimensions (global + per-site).
+  // focusin/selectionchange fire too often to await storage each time, so we
+  // keep these fresh and combine them inline. Both default true so the brief
+  // window before the cache warms doesn't black-hole the UI.
+  A._globalEnabled = true;
+  A._disabledSites = [];
   A.enabled = true;
 
   A.getSettings = function () {
@@ -24,7 +26,9 @@
     ]).then(([sync, local]) => {
       const merged = { ...sync, userProfile: local.userProfile || '' };
       A.cachedSettings = merged;
-      A.enabled = merged.enabled !== false;
+      A._globalEnabled = merged.enabled !== false;
+      A._disabledSites = merged.disabledSites || [];
+      A.enabled = A._globalEnabled && !A._disabledSites.includes(window.location.hostname);
       return merged;
     });
   };
@@ -36,13 +40,14 @@
 
   chrome.storage.onChanged.addListener((changes) => {
     A.cachedSettings = null;
-    if ('enabled' in changes) {
-      A.enabled = changes.enabled.newValue !== false;
+    if ('enabled' in changes) A._globalEnabled = changes.enabled.newValue !== false;
+    if ('disabledSites' in changes) A._disabledSites = changes.disabledSites.newValue || [];
+    if ('enabled' in changes || 'disabledSites' in changes) {
+      const wasEnabled = A.enabled;
+      A.enabled = A._globalEnabled && !A._disabledSites.includes(window.location.hostname);
       // Tear down any visible UI on disable so the user sees the change
-      // without needing to refocus / reselect. These helpers are owned by
-      // ui.js and selection.js, both of which load before any storage event
-      // can realistically arrive (popup write is user-initiated).
-      if (!A.enabled) {
+      // without needing to refocus / reselect.
+      if (!A.enabled && wasEnabled) {
         try { A.hideBtn?.(); } catch {}
         try { A.hideDropdown?.(); } catch {}
         try { A.hideSelPopup?.(); } catch {}

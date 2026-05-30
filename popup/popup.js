@@ -21,7 +21,7 @@ const STATIC_MODELS = {
 // Profile + fillFormEnabled live exclusively on the full settings page now —
 // not read or written here. fillFormEnabled is preserved on save by passing
 // through whatever the settings page wrote.
-const SYNC_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled', 'enabled'];
+const SYNC_KEYS = ['provider', 'model', 'ollamaBaseUrl', 'claudeApiKey', 'openaiApiKey', 'geminiApiKey', 'fillFormEnabled', 'enabled', 'disabledSites'];
 const apiKeyName = p => `${p}ApiKey`;
 
 const $ = id => document.getElementById(id);
@@ -40,6 +40,9 @@ const apiKeyGroup    = $('apiKeyGroup');
 const ollamaGroup    = $('ollamaUrlGroup');
 const refreshBtn     = $('refreshModels');
 const enabledToggle  = $('enabledToggle');
+const siteRow        = $('siteRow');
+const siteHostEl     = $('siteHost');
+const siteToggle     = $('siteToggle');
 const tabs           = document.querySelectorAll('.tab');
 
 function show(el) { el.classList.remove('hidden'); }
@@ -150,11 +153,22 @@ historyBtn.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('history/history.html') });
 });
 
-// Global on/off — writes immediately, no Save click needed. Content scripts
-// pick up the change via chrome.storage.onChanged and tear down any visible
-// UI in the same tick.
+// Global on/off — writes immediately, no Save click needed.
 enabledToggle.addEventListener('change', () => {
   chrome.storage.sync.set({ enabled: enabledToggle.checked });
+});
+
+// Per-site on/off — adds/removes the current hostname from disabledSites.
+let currentHostname = null;
+siteToggle.addEventListener('change', () => {
+  if (!currentHostname) return;
+  chrome.storage.sync.get(['disabledSites'], ({ disabledSites }) => {
+    const sites = disabledSites || [];
+    const updated = siteToggle.checked
+      ? sites.filter(h => h !== currentHostname)
+      : [...new Set([...sites, currentHostname])];
+    chrome.storage.sync.set({ disabledSites: updated });
+  });
 });
 
 function flashStatus(msg, type) {
@@ -178,6 +192,17 @@ chrome.storage.sync.get(SYNC_KEYS, async data => {
   // Default true: a fresh install has Aide on. Only an explicit `false`
   // unchecks the box.
   enabledToggle.checked = data.enabled !== false;
+
+  // Per-site toggle — only shown on http/https tabs.
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.url?.startsWith('http')) {
+    const hostname = new URL(tab.url).hostname;
+    currentHostname = hostname;
+    siteHostEl.textContent = hostname;
+    const disabled = (data.disabledSites || []).includes(hostname);
+    siteToggle.checked = !disabled;
+    show(siteRow);
+  }
 
   setActiveTab(provider);
   applyProvider(provider, data.model);
