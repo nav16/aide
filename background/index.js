@@ -36,8 +36,9 @@ function ensureContextMenus() {
   // dev reload. Items persist across SW restarts within an install, so we
   // only need this on install/update/browser-startup.
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'aide-explain', title: 'Aide: Explain selection', contexts: ['selection'] });
-    chrome.contextMenus.create({ id: 'aide-define',  title: 'Aide: Define selection',  contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'aide-explain',    title: 'Aide: Explain selection',   contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'aide-define',     title: 'Aide: Define selection',    contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'aide-translate',  title: 'Aide: Translate selection', contexts: ['selection'] });
   });
 }
 chrome.runtime.onInstalled.addListener(ensureContextMenus);
@@ -102,8 +103,9 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
-  const kind = info.menuItemId === 'aide-define'  ? 'word'
-             : info.menuItemId === 'aide-explain' ? 'explain'
+  const kind = info.menuItemId === 'aide-define'     ? 'word'
+             : info.menuItemId === 'aide-explain'    ? 'explain'
+             : info.menuItemId === 'aide-translate'  ? 'translate'
              : null;
   if (!kind) return;
   // Scope to info.frameId — the user may have right-clicked inside an

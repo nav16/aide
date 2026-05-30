@@ -64,6 +64,14 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  // Returns true when the text likely contains non-English content. Strips
+  // Unicode punctuation that also appears in English (smart quotes, dashes,
+  // ellipsis, NBSP) before checking so they don't cause false positives.
+  function looksNonEnglish(text) {
+    const stripped = text.replace(/[–—‘’“”… ]/g, '');
+    return /[^\x00-\x7E]/.test(stripped);
+  }
+
   // Extract a JSON object from a model response. Tolerates ```json fences,
   // leading "Here is:" preambles, and trailing commentary by scanning for the
   // first balanced {...} block. Returns null if no valid JSON found.
@@ -198,7 +206,7 @@
     const typeEl = selPopup.querySelector('.aif-sel-type');
     const bodyEl = selPopup.querySelector('.aif-sel-body');
 
-    const typeMap = { explain: 'EXPLAIN', word: 'DEFINE', followup: 'FOLLOW-UP', image: 'IMAGE' };
+    const typeMap = { explain: 'EXPLAIN', word: 'DEFINE', followup: 'FOLLOW-UP', image: 'IMAGE', translate: 'TRANSLATE' };
     typeEl.textContent = typeMap[v.kind] || 'FOLLOW-UP';
 
     let html = null;
@@ -390,7 +398,8 @@
     if (isInsideEditableField(range.commonAncestorContainer)) { A.hideSelPopup(); return; }
 
     const isWord = /^\S+$/.test(text) && text.length < 40;
-    const kind   = forcedKind || (isWord ? 'word' : 'explain');
+    const kind   = forcedKind
+      || (looksNonEnglish(text) ? 'translate' : isWord ? 'word' : 'explain');
 
     const bodyEl = selPopup.querySelector('.aif-sel-body');
     const typeEl = selPopup.querySelector('.aif-sel-type');
@@ -408,7 +417,7 @@
 
     if (A.lastStream) { try { A.lastStream.cancel(); } catch {} A.lastStream = null; }
 
-    typeEl.textContent = isWord ? 'DEFINE' : 'EXPLAIN';
+    typeEl.textContent = kind === 'word' ? 'DEFINE' : kind === 'translate' ? 'TRANSLATE' : 'EXPLAIN';
     bodyEl.textContent = '···';
     bodyEl.className = 'aif-sel-body loading';
     selPopup.dataset.selText = text;

@@ -12,7 +12,7 @@ export const SYSTEM = [
 // Hard ceilings by call kind. Define output is a small JSON object (~80
 // tokens in practice). The cap is loose enough that any rogue preamble from
 // Gemini before the JSON does not truncate the JSON itself.
-export const MAX_TOKENS = { word: 256, explain: 512, followup: 384, image: 512 };
+export const MAX_TOKENS = { word: 256, explain: 512, followup: 384, image: 512, translate: 512 };
 
 // Per-call token cap that scales with the input length. A 4-word selection
 // asks for a tiny explanation; a 1k-char passage may want the full ceiling.
@@ -83,7 +83,7 @@ export function tokensForField(ctx) {
 // fitting maxChars). Define is dictionary-precision — low temp keeps the
 // part-of-speech and sense stable across calls. Explain wants natural prose.
 // Followup slightly looser to avoid parroting prior answer verbatim.
-export const TEMPERATURE = { form: 0.3, word: 0.2, explain: 0.5, followup: 0.6, image: 0.4 };
+export const TEMPERATURE = { form: 0.3, word: 0.2, explain: 0.5, followup: 0.6, image: 0.4, translate: 0.2 };
 
 // Stop tokens for fields that should never contain newlines. textarea and
 // contenteditable allow multi-line, so no stop there. Helps when the model
@@ -370,6 +370,18 @@ export function explainPrompts(kind, text, pageTitle, context, hostname) {
     : `Page context: "${pageTitle}"`;
 
   if (kind === 'image')    return imagePrompts(text, pageTitle, hostname);
+  if (kind === 'translate') {
+    return {
+      system: [
+        'You are a precise translator.',
+        'Translate the given text into English.',
+        'Output ONLY the translation — no label, no preamble, no explanation, no quotes.',
+        'Preserve paragraph breaks and original formatting.',
+        'If the text is already in English, return it unchanged.'
+      ].join('\n'),
+      user: `Text: "${text}"\n${pageLine}`
+    };
+  }
   if (kind === 'followup') {
     const turns = Array.isArray(context?.turns) ? context.turns : [];
     const transcript = turns.length
