@@ -2,18 +2,16 @@
 
 const STATIC_MODELS = {
   claude: [
-    { value: 'claude-sonnet-4-6',          label: 'Sonnet 4.6  —  recommended' },
-    { value: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5   —  fast' },
-    { value: 'claude-opus-4-7',            label: 'Opus 4.7    —  powerful' }
+    { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6  —  recommended' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5  —  fast' }
   ],
   openai: [
-    { value: 'gpt-4o',       label: 'GPT-4o        —  recommended' },
-    { value: 'gpt-4o-mini',  label: 'GPT-4o Mini   —  fast' },
-    { value: 'gpt-4-turbo',  label: 'GPT-4 Turbo   —  legacy' }
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini  —  recommended' },
+    { value: 'gpt-5.4',      label: 'GPT-5.4       —  quality' }
   ],
   gemini: [
-    { value: 'gemini-3-flash-preview',          label: 'Gemini 3 Flash         —  fast' },
-    { value: 'gemini-3.1-flash-lite-preview',   label: 'Gemini 3.1 Flash Lite  —  cost-efficient' }
+    { value: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash      —  recommended' },
+    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite  —  cheapest' }
   ]
 };
 
