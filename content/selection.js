@@ -64,10 +64,35 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // Returns true when the text likely contains non-English content. Strips
-  // Unicode punctuation that also appears in English (smart quotes, dashes,
-  // ellipsis, NBSP) before checking so they don't cause false positives.
-  function looksNonEnglish(text) {
+  // Returns true when the text is likely non-English. Uses Chrome's built-in
+  // CLD via chrome.i18n.detectLanguage — a pure non-ASCII check misses
+  // accent-free Latin-script languages (Dutch/German prose can be 100%
+  // ASCII) and false-positives on English containing ², °, é, etc.
+  //
+  // CLD's verdict is only trusted when isReliable — on short fragments it
+  // confidently misfires both ways (a 6-word Dutch phrase reads nl but
+  // unreliable; a 7-word English phrase reads "lb" at 100%). When the
+  // selection alone is too short for a reliable read, retry on the
+  // surrounding paragraph: the selection inherits its context's language.
+  // Only when that is also unreliable fall back to the non-ASCII heuristic
+  // so CJK/Cyrillic single words still translate; it strips Unicode
+  // punctuation that also appears in English (smart quotes, dashes,
+  // ellipsis, NBSP) first so they don't cause false positives.
+  async function looksNonEnglish(text, range) {
+    try {
+      const verdict = async (t) => {
+        const res = await chrome.i18n.detectLanguage(t);
+        const top = res?.languages?.[0];
+        if (!res?.isReliable || !top) return null;
+        return top.language !== 'en' && top.language !== 'und';
+      };
+      let v = await verdict(text);
+      if (v === null && range) {
+        const surrounding = extractSurrounding(range, text);
+        if (surrounding) v = await verdict(surrounding);
+      }
+      if (v !== null) return v;
+    } catch {}
     const stripped = text.replace(/[–—‘’“”… ]/g, '');
     return /[^\x00-\x7E]/.test(stripped);
   }
@@ -399,7 +424,7 @@
 
     const isWord = /^\S+$/.test(text) && text.length < 40;
     const kind   = forcedKind
-      || (looksNonEnglish(text) ? 'translate' : isWord ? 'word' : 'explain');
+      || ((await looksNonEnglish(text, range)) ? 'translate' : isWord ? 'word' : 'explain');
 
     const bodyEl = selPopup.querySelector('.aif-sel-body');
     const typeEl = selPopup.querySelector('.aif-sel-type');
