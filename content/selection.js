@@ -3,6 +3,17 @@
   if (window.__aide?.skip) return;
   const A = (window.__aide ||= {});
 
+  // How long a selection must stay unchanged (mouse button up) before the
+  // popup auto-fires. Selections made just to copy rarely sit still this
+  // long before the next click/drag dismisses them.
+  const SELECTION_SETTLE_MS = 700;
+
+  // Auto-trigger ceiling. Triple-click paragraph grabs and Cmd+A routinely
+  // exceed this and are copy/skim gestures, not explain requests. The
+  // right-click menu has no cap — that click already states intent, and
+  // tokensForField scales the answer budget for long passages.
+  const MAX_AUTO_TRIGGER_CHARS = 600;
+
   // ---- DOM setup ----
 
   const selPopup = document.createElement('div');
@@ -419,6 +430,15 @@
       return;
     }
 
+    // Oversized selections are copy/skim gestures (triple-click paragraph,
+    // Cmd+A), not explain requests — don't auto-fire on them. The context
+    // menu (forcedKind) still works for intentionally long passages.
+    if (!forcedKind && text.length > MAX_AUTO_TRIGGER_CHARS) {
+      if (inConvo) return;
+      A.hideSelPopup();
+      return;
+    }
+
     const range = sel.getRangeAt(0);
     if (isInsideEditableField(range.commonAncestorContainer)) { A.hideSelPopup(); return; }
 
@@ -677,10 +697,42 @@
     setTimeout(() => { copyBtn.textContent = prev; }, 900);
   });
 
+  // Auto-trigger only after the selection has settled: no selectionchange
+  // for SELECTION_SETTLE_MS *and* the mouse button is up. Selections made
+  // just to copy are usually re-collapsed or re-dragged quickly, and a
+  // mid-drag pause must not fire — without the button gate, hesitating
+  // while dragging would pop the explanation for a half-made selection.
+  // Collapse (click-away dismiss) keeps the old shorter delay so closing
+  // the popup stays snappy.
   let selDebounce = null;
+  let selMouseDown = false;
+  let selPendingMouseUp = false;
+
+  function fireCheckSelection() {
+    if (selMouseDown) { selPendingMouseUp = true; return; }
+    checkSelection();
+  }
+
+  document.addEventListener('mousedown', (e) => {
+    if (e.button === 0) selMouseDown = true;
+  }, true);
+  document.addEventListener('mouseup', (e) => {
+    if (e.button !== 0) return;
+    selMouseDown = false;
+    // settle timer expired mid-drag — restart the clock now the button is up
+    if (selPendingMouseUp) {
+      selPendingMouseUp = false;
+      clearTimeout(selDebounce);
+      selDebounce = setTimeout(fireCheckSelection, SELECTION_SETTLE_MS);
+    }
+  }, true);
+
   document.addEventListener('selectionchange', () => {
     clearTimeout(selDebounce);
-    selDebounce = setTimeout(checkSelection, 300);
+    selPendingMouseUp = false;
+    const sel = window.getSelection();
+    const delay = (!sel || sel.isCollapsed) ? 300 : SELECTION_SETTLE_MS;
+    selDebounce = setTimeout(fireCheckSelection, delay);
   });
 
   // Right-click → context menu pick. SW routes the click to the frame the
